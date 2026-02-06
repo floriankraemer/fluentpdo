@@ -43,7 +43,7 @@ class Result implements Iterator, Countable
     /**
      * Fetch all rows (use with caution - loads into memory)
      */
-    public function fetchAll(int $fetchMode = null): array
+    public function fetchAll(?int $fetchMode = null): array
     {
         return $this->statement->fetchAll($fetchMode ?? $this->fetchMode);
     }
@@ -96,13 +96,14 @@ class Result implements Iterator, Countable
 
     public function next(): void
     {
-        $this->currentRow = $this->statement->fetch($this->fetchMode);
+        $fetched = $this->statement->fetch($this->fetchMode);
+        $this->currentRow = $fetched === false ? null : $fetched;
         $this->position++;
     }
 
     public function valid(): bool
     {
-        return $this->currentRow !== false;
+        return $this->currentRow !== null;
     }
 
     // Countable implementation

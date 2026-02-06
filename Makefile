@@ -36,6 +36,16 @@ update: ## Update PHP dependencies
 test: ## Run the test suite
 	docker-compose exec php vendor/bin/phpunit
 
+# * Benchmarking
+bench: ## Run PHPBench benchmarks
+	docker-compose exec php vendor/bin/phpbench run --bootstrap=benchmarks/bootstrap.php benchmarks/
+
+bench-compare: ## Compare benchmarks against baseline
+	docker-compose exec php vendor/bin/phpbench run --bootstrap=benchmarks/bootstrap.php --report=aggregate benchmarks/
+
+bench-store: ## Store current benchmarks as baseline
+	docker-compose exec php vendor/bin/phpbench run --bootstrap=benchmarks/bootstrap.php --store benchmarks/
+
 test-watch: ## Run tests in watch mode (if available)
 	docker-compose exec php vendor/bin/phpunit-watcher watch
 
