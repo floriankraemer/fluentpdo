@@ -1,9 +1,12 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Envms\FluentPDO\Queries;
 
 use DateTime, IteratorAggregate, PDO, PDOStatement;
 use Envms\FluentPDO\{Exception, Literal, Query, Regex, Structure, Utilities};
+use Envms\FluentPDO\Dialect\DialectInterface;
 
 /**
  * Base query builder
@@ -33,8 +36,20 @@ abstract class Base implements IteratorAggregate
     /** @var array */
     protected $parameters = [];
 
+    /** @var DialectInterface */
+    protected readonly DialectInterface $dialect;
+
     /** @var Regex */
     protected $regex;
+
+    /** @var bool */
+    private $executed = false;
+
+    /** @var array|null */
+    private ?array $builtParameters = null;
+
+    /** @var string|null */
+    private ?string $builtQuery = null;
 
     /** @var string */
     protected $message = '';
@@ -48,12 +63,13 @@ abstract class Base implements IteratorAggregate
      * @param Query $fluent
      * @param       $clauses
      */
-    protected function __construct(Query $fluent, $clauses)
+    protected function __construct(Query $fluent, array $clauses)
     {
         $this->currentFetchMode = defined('PDO::FETCH_DEFAULT') ? PDO::FETCH_DEFAULT : PDO::FETCH_BOTH;
         $this->fluent = $fluent;
         $this->clauses = $clauses;
         $this->result = null;
+        $this->dialect = $fluent->getDialect();
 
         $this->initClauses();
 
@@ -90,6 +106,18 @@ abstract class Base implements IteratorAggregate
     }
 
     /**
+     * Clear query state after execution to free memory
+     * ! IMPORTANT: Call this in execute() method
+     */
+    protected function clearState(): void
+    {
+        $this->statements = [];
+        $this->parameters = [];
+        $this->executed = true;
+        // Keep $builtParameters and $builtQuery for methods to work after execution
+    }
+
+    /**
      * Add statement for all clauses except WHERE
      *
      * @param       $clause
@@ -98,20 +126,24 @@ abstract class Base implements IteratorAggregate
      *
      * @return $this
      */
-    protected function addStatement($clause, $statement, $parameters = [])
+    protected function addStatement($clause, $statement, $parameters = []): self
     {
         if ($statement === null) {
             return $this->resetClause($clause);
         }
 
         if ($this->clauses[$clause]) {
+            // NEW (memory efficient): Use array_push instead of array_merge
             if (is_array($statement)) {
-                $this->statements[$clause] = array_merge($this->statements[$clause], $statement);
+                array_push($this->statements[$clause], ...$statement);
             } else {
                 $this->statements[$clause][] = $statement;
             }
 
-            $this->parameters[$clause] = array_merge($this->parameters[$clause], $parameters);
+            // Same for parameters
+            if (!empty($parameters)) {
+                array_push($this->parameters[$clause], ...$parameters);
+            }
         } else {
             $this->statements[$clause] = $statement;
             $this->parameters[$clause] = $parameters;
@@ -186,7 +218,7 @@ abstract class Base implements IteratorAggregate
      *
      * @throws Exception
      */
-    public function execute()
+    public function execute(mixed $param = null): mixed
     {
         $startTime = microtime(true);
 
@@ -202,6 +234,19 @@ abstract class Base implements IteratorAggregate
 
             $this->executeQuery($parameters, $startTime, $execTime);
             $this->debug();
+
+            // Clear state after execution to free memory
+            $this->clearState();
+
+            // Return Result wrapper only for SELECT queries that return data
+            // For INSERT/UPDATE/DELETE, return the PDOStatement as before
+            if ($this->result instanceof PDOStatement && $this instanceof \Envms\FluentPDO\Queries\Select) {
+                return new Result(
+                    $this->result,
+                    $this->currentFetchMode,
+                    $this->fluent->convertRead
+                );
+            }
         }
 
         return $this->result;
@@ -232,6 +277,10 @@ abstract class Base implements IteratorAggregate
      */
     public function getParameters(): array
     {
+        if ($this->builtParameters !== null) {
+            return $this->builtParameters;
+        }
+
         return $this->buildParameters();
     }
 
@@ -352,8 +401,12 @@ abstract class Base implements IteratorAggregate
      * @return string
      * @throws Exception
      */
-    protected function buildQuery()
+    protected function buildQuery(): string
     {
+        if ($this->builtQuery !== null) {
+            return $this->builtQuery;
+        }
+
         if ($this->fluent->convertWrite === true) {
             $this->convertNullValues();
         }
@@ -374,7 +427,8 @@ abstract class Base implements IteratorAggregate
             }
         }
 
-        return trim(str_replace(['\.', '\:'], ['.', ':'], $query));
+        $this->builtQuery = trim(str_replace(['\.', '\:'], ['.', ':'], $query));
+        return $this->builtQuery;
     }
 
     /**
@@ -382,6 +436,10 @@ abstract class Base implements IteratorAggregate
      */
     protected function buildParameters(): array
     {
+        if ($this->builtParameters !== null) {
+            return $this->builtParameters;
+        }
+
         $parameters = [];
         foreach ($this->parameters as $clauses) {
             if ($this->fluent->convertWrite === true) {
@@ -390,7 +448,7 @@ abstract class Base implements IteratorAggregate
 
             if (is_array($clauses)) {
                 foreach ($clauses as $key => $value) {
-                    if (strpos($key, ':') === 0) { // these are named params e.g. (':name' => 'Mark')
+                    if (is_string($key) && strpos($key, ':') === 0) { // these are named params e.g. (':name' => 'Mark')
                         $parameters += [$key => $value];
                     } else {
                         $parameters[] = $value;
@@ -401,6 +459,7 @@ abstract class Base implements IteratorAggregate
             }
         }
 
+        $this->builtParameters = $parameters;
         return $parameters;
     }
 
@@ -409,34 +468,22 @@ abstract class Base implements IteratorAggregate
      *
      * @return string
      */
-    protected function quote($value)
+    protected function quote(mixed $value): string
     {
-        if (!isset($value)) {
-            return "NULL";
+        if ($value === null) {
+            return 'NULL';
         }
 
-        if (is_array($value)) { // (a, b) IN ((1, 2), (3, 4))
-            return "(" . implode(", ", array_map([$this, 'quote'], $value)) . ")";
+        if (is_bool($value)) {
+            return $value ? '1' : '0';
         }
 
-        $value = $this->formatValue($value);
-        if (is_float($value)) {
-            return sprintf("%F", $value); // otherwise depends on setlocale()
+        if (is_array($value)) {
+            return '(' . implode(', ', array_map([$this, 'quote'], $value)) . ')';
         }
 
-        if ($value === true) {
-            return 1;
-        }
-
-        if ($value === false) {
-            return 0;
-        }
-
-        if (is_int($value) || $value instanceof Literal) { // number or SQL code - for example "NOW()"
-            return (string)$value;
-        }
-
-        return $this->fluent->getPdo()->quote($value);
+        // Use dialect instead of direct PDO::quote()
+        return $this->dialect->quoteValue($value);
     }
 
     /**
@@ -526,7 +573,7 @@ abstract class Base implements IteratorAggregate
     private function setObjectFetchMode(PDOStatement $result): void
     {
         if ($this->object !== false) {
-            if (class_exists($this->object)) {
+            if (is_string($this->object) && class_exists($this->object)) {
                 $this->currentFetchMode = PDO::FETCH_CLASS;
                 $result->setFetchMode($this->currentFetchMode, $this->object);
             } else {
@@ -581,5 +628,31 @@ abstract class Base implements IteratorAggregate
                 $debug($this);
             }
         }
+    }
+
+    /**
+     * Fix __clone to deep clone all arrays
+     * ! CHANGE: Complete implementation
+     */
+    public function __clone(): void
+    {
+        // Deep clone all arrays
+        $this->statements = array_map(
+            fn($stmt) => is_array($stmt) ? [...$stmt] : $stmt,
+            $this->statements
+        );
+
+        $this->parameters = array_map(
+            fn($param) => is_array($param) ? [...$param] : $param,
+            $this->parameters
+        );
+
+        $this->joins = [...$this->joins];
+
+        // Reset execution state
+        $this->result = null;
+        $this->executed = false;
+        $this->builtParameters = null;
+        $this->builtQuery = null;
     }
 }

@@ -1,8 +1,11 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Envms\FluentPDO;
 
 use PDO;
+use Envms\FluentPDO\Dialect\{DialectInterface, DialectFactory};
 use Envms\FluentPDO\Queries\{Insert, Select, Update, Delete};
 
 /**
@@ -23,9 +26,11 @@ use Envms\FluentPDO\Queries\{Insert, Select, Update, Delete};
 class Query
 {
     /** @var PDO */
-    protected $pdo;
+    protected readonly PDO $pdo;
     /** @var Structure */
-    protected $structure;
+    protected readonly Structure $structure;
+
+    protected readonly DialectInterface $dialect;
 
     /** @var bool|callable */
     public $debug = false;
@@ -45,22 +50,27 @@ class Query
     /** @var string */
     protected $separator;
 
-    /**
-     * Query constructor
-     *
-     * @param PDO        $pdo
-     * @param ?Structure $structure
-     */
-    public function __construct(PDO $pdo, ?Structure $structure = null)
-    {
+    public function __construct(
+        PDO $pdo,
+        ?Structure $structure = null,
+        ?DialectInterface $dialect = null
+    ) {
         $this->pdo = $pdo;
+        $this->structure = $structure ?? new Structure();
+        $this->dialect = $dialect ?? DialectFactory::create($pdo);
 
-        // if exceptions are already activated in PDO, activate them in Fluent as well
+        // Auto-enable exceptions if PDO has them
         if ($this->pdo->getAttribute(PDO::ATTR_ERRMODE) === PDO::ERRMODE_EXCEPTION) {
-            $this->throwExceptionOnError(true);
+            $this->exceptionOnError = true;
         }
+    }
 
-        $this->structure = ($structure instanceof Structure) ? $structure : new Structure();
+    /**
+     * ! NEW: Get dialect instance
+     */
+    public function getDialect(): DialectInterface
+    {
+        return $this->dialect;
     }
 
     /**
@@ -138,26 +148,19 @@ class Query
     /**
      * Create DELETE query
      *
-     * @param ?string $table
-     * @param ?int    $primaryKey delete only row by primary key
+     * @param ?string      $table
+     * @param int|array|null $primaryKey delete only row by primary key (supports composite keys)
      *
      * @return Delete
      *
      * @throws Exception
      */
-    public function delete(?string $table = null, ?int $primaryKey = null): Delete
+    public function delete(?string $table = null, int|array|null $primaryKey = null): Delete
     {
         $this->setTableName($table);
         $table = $this->getFullTableName();
 
-        $query = new Delete($this, $table);
-
-        if ($primaryKey) {
-            $primaryKeyName = $this->getStructure()->getPrimaryKey($this->table);
-            $query = $query->where($primaryKeyName, $primaryKey);
-        }
-
-        return $query;
+        return new Delete($this, $table, $primaryKey);
     }
 
     /**

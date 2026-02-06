@@ -1,7 +1,26 @@
-<phpunit bootstrap="vendor/autoload.php">
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="https://schema.phpunit.de/11.0/phpunit.xsd"
+         bootstrap="vendor/autoload.php"
+         cacheDirectory=".phpunit.cache"
+         requireCoverageMetadata="false"
+         beStrictAboutOutputDuringTests="true"
+         failOnRisky="true"
+         failOnWarning="true">
     <testsuites>
         <testsuite name="fluent">
             <directory suffix="Test.php">tests</directory>
         </testsuite>
     </testsuites>
+    <source>
+        <include>
+            <directory suffix=".php">src</directory>
+        </include>
+    </source>
+    <php>
+        <env name="DB_DRIVER" value="mysql"/>
+        <env name="DB_HOST" value="mysql"/>
+        <env name="DB_NAME" value="fluentdb"/>
+        <env name="DB_USER" value="vagrant"/>
+        <env name="DB_PASS" value="vagrant"/>
+    </php>
 </phpunit>

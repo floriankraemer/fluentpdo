@@ -1,0 +1,49 @@
+# version: '3.8'  # Removed obsolete version declaration
+
+services:
+  php:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: fluentpdo-php
+    volumes:
+      - .:/app
+      - composer-cache:/root/.composer/cache
+    working_dir: /app
+    environment:
+      - PHP_IDE_CONFIG=serverName=fluentpdo
+      - TRAVIS=false
+    depends_on:
+      - mysql
+    networks:
+      - fluentpdo-network
+    command: tail -f /dev/null
+
+  mysql:
+    image: mysql:8.0
+    container_name: fluentpdo-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: fluentdb
+      MYSQL_USER: vagrant
+      MYSQL_PASSWORD: vagrant
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./tests/_resources/fluentdb.sql:/docker-entrypoint-initdb.d/fluentdb.sql:ro
+    networks:
+      - fluentpdo-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  composer-cache:
+  mysql-data:
+
+networks:
+  fluentpdo-network:
+    driver: bridge

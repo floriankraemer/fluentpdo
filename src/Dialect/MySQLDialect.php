@@ -1,0 +1,68 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Envms\FluentPDO\Dialect;
+
+class MySQLDialect extends AbstractDialect
+{
+    public function quoteIdentifier(string $identifier): string
+    {
+        // Handle aliases: table.column or table AS alias
+        if (str_contains($identifier, '.')) {
+            return implode('.', array_map(
+                fn($part) => "`" . str_replace('`', '``', trim($part)) . "`",
+                explode('.', $identifier)
+            ));
+        }
+
+        return "`" . str_replace('`', '``', $identifier) . "`";
+    }
+
+    public function formatLimit(?int $limit, ?int $offset): string
+    {
+        if ($limit === null) {
+            return '';
+        }
+
+        $clause = " LIMIT $limit";
+        if ($offset !== null && $offset > 0) {
+            $clause .= " OFFSET $offset";
+        }
+
+        return $clause;
+    }
+
+    public function getLastInsertIdQuery(?string $sequence = null): string
+    {
+        return 'LAST_INSERT_ID()';
+    }
+
+    public function supportsUpsert(): bool
+    {
+        return true;
+    }
+
+    public function formatUpsert(array $updates): string
+    {
+        $sets = [];
+        foreach ($updates as $key => $value) {
+            $sets[] = "{$this->quoteIdentifier($key)} = VALUES({$this->quoteIdentifier($key)})";
+        }
+
+        return " ON DUPLICATE KEY UPDATE " . implode(', ', $sets);
+    }
+
+    public function getName(): string
+    {
+        return 'mysql';
+    }
+
+    public function supportsFeature(string $feature): bool
+    {
+        return match($feature) {
+            'upsert', 'subquery_join', 'json' => true,
+            default => false
+        };
+    }
+}

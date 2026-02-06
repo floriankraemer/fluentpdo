@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Envms\FluentPDO\Queries;
 
 use Envms\FluentPDO\{Exception, Literal, Query};
@@ -118,7 +120,7 @@ class Insert extends Base
      *
      * @return int|bool - Last inserted primary key
      */
-    public function execute($sequence = null)
+    public function execute(mixed $sequence = null): mixed
     {
         $result = parent::execute();
 

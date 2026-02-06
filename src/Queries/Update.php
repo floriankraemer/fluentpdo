@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Envms\FluentPDO\Queries;
 
 use Envms\FluentPDO\{Exception, Literal, Query};
@@ -80,7 +82,7 @@ class Update extends Common
      *
      * @return int|boolean|\PDOStatement
      */
-    public function execute($getResultAsPdoStatement = false)
+    public function execute(mixed $getResultAsPdoStatement = false): mixed
     {
         if (empty($this->statements['WHERE'])) {
             throw new Exception('Update queries must contain a WHERE clause to prevent unwanted data loss');

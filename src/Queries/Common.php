@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Envms\FluentPDO\Queries;
 
 use Envms\FluentPDO\{Exception, Literal, Utilities};
@@ -152,9 +154,16 @@ abstract class Common extends Base
             // condition is column only
             if (is_null($parameters)) {
                 return $this->addWhereStatement("$condition IS NULL", $separator);
-            } elseif ($args[1] === []) {
-                return $this->addWhereStatement('FALSE', $separator);
+            // ! CHANGE: Empty array should result in FALSE condition
             } elseif (is_array($args[1])) {
+                if (empty($args[1])) {
+                    // Empty IN clause - always false
+                    return $this->addWhereStatement('1 = 0', $separator);
+                }
+
+                $in = $this->quote($args[1]);
+
+                return $this->addWhereStatement("$condition IN $in", $separator);
                 $in = $this->quote($args[1]);
 
                 return $this->addWhereStatement("$condition IN $in", $separator);
@@ -383,7 +392,7 @@ abstract class Common extends Base
      *
      * @return string
      */
-    protected function buildQuery()
+    protected function buildQuery(): string
     {
         // first create extra join from statements with columns with referenced tables
         $statementsWithReferences = ['WHERE', 'SELECT', 'GROUP BY', 'ORDER BY'];
@@ -509,10 +518,14 @@ abstract class Common extends Base
         return $joinItem;
     }
 
-    public function __clone()
+    public function __clone(): void
     {
+        // First call parent __clone
+        parent::__clone();
+
+        // Fix circular references in clauses
         foreach ($this->clauses as $clause => $value) {
-            if (is_array($value) && $value[0] instanceof Common) {
+            if (is_array($value) && isset($value[0]) && $value[0] instanceof Common) {
                 $this->clauses[$clause][0] = $this;
             }
         }

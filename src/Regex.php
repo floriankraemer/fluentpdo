@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Envms\FluentPDO;
 
 /**
@@ -36,8 +38,9 @@ class Regex
      *
      * @return null|string|string[]
      */
-    public function splitClauses(string $subject)
+    public function splitClauses(mixed $subject): null|string|array
     {
+        $subject = (string) $subject;
         return preg_replace(
             '/\b(WHERE|FROM|GROUP BY|HAVING|ORDER BY|LIMIT|OFFSET|UNION|ON DUPLICATE KEY UPDATE|VALUES|SET)\b/',
             "\n$0",
@@ -124,10 +127,20 @@ class Regex
      *
      * @return false|int
      */
-    public function tableAlias(string $subject, &$matches = null)
+    public function tableAlias(string $subject, &$matches = null): int|false
     {
+        // ! CHANGE: Support subquery JOINs like (SELECT...) alias ON condition
+        if (preg_match(
+            '/^\s*(\(.*\))\s+(?:AS\s+)?([' . self::SQLCHARS . ']+)\s+ON\s/uis',
+            $subject,
+            $matches
+        )) {
+            return 1;
+        }
+
+        // Original pattern for regular table aliases
         return preg_match(
-            '/`?([' . self::SQLCHARS . ']+[.:]?[' . self::SQLCHARS . '*]*)`?(\s+AS)?(\s+`?([' . self::SQLCHARS . ']*)`?)?/ui',
+            '/`?([' . self::SQLCHARS . ']+[.:]?[' . self::SQLCHARS . '*]*)`?(\\s+AS)?(\\s+`?([' . self::SQLCHARS . ']*)`?)?/ui',
             $subject,
             $matches
         );

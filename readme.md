@@ -5,29 +5,30 @@ FluentPDO is a PHP SQL query builder using PDO. It's a quick and light library f
 ## Features
 
 - Easy interface for creating robust queries
-- Supports any database compatible with PDO
+- **Multi-dialect SQL support** - MySQL, PostgreSQL, SQLite, and SQL Server
+- **Memory-efficient processing** - Chunk large result sets without memory exhaustion
 - Ability to build complex SELECT, INSERT, UPDATE & DELETE queries with little code
 - Type hinting for magic methods with code completion in smart IDEs
+- **Composite primary key support** for complex database schemas
+- **ODBC compatibility** for databases without native PDO::quote() support
 
 ## Versions
 
+#### Version 3.x
+
+The latest major release of FluentPDO with significant performance and memory improvements.
+Officially supports PHP 8.3+, includes multi-dialect SQL support, and features a complete
+rewrite for better maintainability. See [UPGRADE-3.0.md](UPGRADE-3.0.md) for migration guide.
+
 #### Version 2.x
 
-The stable release of FluentPDO and actively maintained. Officially supports PHP 7.3 to PHP 8.0,
-but it can work with previous versions of PHP 7.
+The previous stable release of FluentPDO. Supports PHP 7.1 to PHP 8.2.
+This version is still maintained for compatibility but no new features will be added.
 
 #### Version 1.x
 
 The legacy release of FluentPDO. It is no longer supported and will not be maintained or updated.
 This version works with PHP 5.4 to 7.1.
-
-#### Version 3.x - alpha
-
-This version is a full rewrite of Fluent from the ground up. Its main advantage is
-significantly less memory usage and much greater performance in query building. It also places
-a few additional restrictions to make queries easier to read and maintain. Documentation has also
-been a very common request, and version 3 is being fully documented alongside development.
-Details and metrics will be posted once available.
 
 ## Reference
 
@@ -43,7 +44,7 @@ Add the following line in your `composer.json` file:
 
 	"require": {
 		...
-		"envms/fluentpdo": "^2.2.0"
+		"envms/fluentpdo": "^3.0.0"
 	}
 
 update your dependencies with `composer update`, and you're done!
@@ -137,6 +138,44 @@ Finally, it's always a good idea to free resources as soon as they are done with
  ```php
 $fluent->close();
 ```
+
+## Multi-Dialect SQL Support
+
+FluentPDO automatically detects your database dialect and generates appropriate SQL:
+
+```php
+// MySQL
+$pdo = new PDO('mysql:host=localhost;dbname=test');
+$fluent = new Query($pdo); // Uses MySQL dialect
+
+// PostgreSQL
+$pdo = new PDO('pgsql:host=localhost;dbname=test');
+$fluent = new Query($pdo); // Uses PostgreSQL dialect
+
+// SQLite
+$pdo = new PDO('sqlite:database.db');
+$fluent = new Query($pdo); // Uses SQLite dialect
+
+// SQL Server via ODBC
+$pdo = new PDO('odbc:Driver={SQL Server};Server=localhost;Database=test');
+$fluent = new Query($pdo); // Uses SQL Server dialect
+```
+
+## Memory-Efficient Large Dataset Processing
+
+Process large result sets without loading everything into memory:
+
+```php
+$fluent->from('large_table')
+    ->chunk(1000, function($rows) {
+        foreach ($rows as $row) {
+            // Process each row
+            processRow($row);
+        }
+    });
+```
+
+This processes data in chunks of 1000 rows, keeping memory usage low.
 
 ## CRUD Query Examples
 

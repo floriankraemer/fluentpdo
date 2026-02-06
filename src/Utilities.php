@@ -1,6 +1,10 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Envms\FluentPDO;
+
+use Envms\FluentPDO\Queries\Result;
 
 /**
  * Class Utilities
@@ -39,14 +43,17 @@ class Utilities
     /**
      * Converts columns from strings to types according to PDOStatement::columnMeta()
      *
-     * @param \PDOStatement      $statement
-     * @param array|\Traversable $rows - provided by PDOStatement::fetch with PDO::FETCH_ASSOC
+     * @param \PDOStatement|Result $statement
+     * @param array|\Traversable   $rows - provided by PDOStatement::fetch with PDO::FETCH_ASSOC
      *
      * @return array|\Traversable
      */
-    public static function stringToNumeric(\PDOStatement $statement, $rows)
+    public static function stringToNumeric(\PDOStatement|Result $statement, $rows)
     {
-        for ($i = 0; ($columnMeta = $statement->getColumnMeta($i)) !== false; $i++) {
+        // Get the underlying PDOStatement from Result if needed
+        $pdoStatement = $statement instanceof Result ? $statement->getStatement() : $statement;
+
+        for ($i = 0; ($columnMeta = $pdoStatement->getColumnMeta($i)) !== false; $i++) {
             $type = $columnMeta['native_type'];
 
             switch ($type) {

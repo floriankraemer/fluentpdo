@@ -1,4 +1,7 @@
 <?php
+
+declare(strict_types=1);
+
 namespace Envms\FluentPDO\Queries;
 
 use Envms\FluentPDO\{Query, Utilities};

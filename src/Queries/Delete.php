@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Envms\FluentPDO\Queries;
 
 use Envms\FluentPDO\{Exception, Query};
@@ -21,12 +23,9 @@ class Delete extends Common
     private $ignore = false;
 
     /**
-     * Delete constructor
-     *
-     * @param Query  $fluent
-     * @param string $table
+     * ! CHANGE: Support composite primary keys
      */
-    public function __construct(Query $fluent, string $table)
+    public function __construct(Query $fluent, string $table, int|array|null $primaryKey = null)
     {
         $clauses = [
             'DELETE FROM' => [$this, 'getClauseDeleteFrom'],
@@ -42,6 +41,31 @@ class Delete extends Common
 
         $this->statements['DELETE FROM'] = $table;
         $this->statements['DELETE'] = $table;
+
+        if ($primaryKey !== null) {
+            $pkColumns = $fluent->getStructure()->getPrimaryKey($table);
+
+            // Handle composite primary key
+            if (is_array($pkColumns)) {
+                if (!is_array($primaryKey)) {
+                    throw new Exception(
+                        "Table '$table' has composite primary key, array of values required"
+                    );
+                }
+
+                foreach ($pkColumns as $column) {
+                    if (!isset($primaryKey[$column])) {
+                        throw new Exception(
+                            "Missing value for primary key column '$column'"
+                        );
+                    }
+                    $this->where($column, $primaryKey[$column]);
+                }
+            } else {
+                // Single primary key
+                $this->where($pkColumns, $primaryKey);
+            }
+        }
     }
 
     /**
@@ -61,7 +85,7 @@ class Delete extends Common
      *
      * @return string
      */
-    protected function buildQuery()
+    protected function buildQuery(): string
     {
         if ($this->statements['FROM']) {
             unset($this->clauses['DELETE FROM']);
@@ -77,9 +101,9 @@ class Delete extends Common
      *
      * @throws Exception
      *
-     * @return bool
+     * @return mixed
      */
-    public function execute()
+    public function execute(mixed $param = null): mixed
     {
         if (empty($this->statements['WHERE'])) {
             throw new Exception('Delete queries must contain a WHERE clause to prevent unwanted data loss');

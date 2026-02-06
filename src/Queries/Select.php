@@ -1,8 +1,11 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Envms\FluentPDO\Queries;
 
 use Envms\FluentPDO\{Exception, Query, Utilities};
+use Envms\FluentPDO\Queries\Result;
 
 /**
  * SELECT query builder
@@ -91,13 +94,30 @@ class Select extends Common implements \Countable
      *
      * @return string
      */
-    public function fetchColumn(int $columnNumber = 0)
+    public function fetchColumn(int $columnNumber = 0): mixed
     {
         if (($s = $this->execute()) !== false) {
             return $s->fetchColumn($columnNumber);
         }
 
-        return $s;
+        return false;
+    }
+
+    /**
+     * ! NEW: Fetch all as single-dimensional array (column values)
+     */
+    public function fetchColumnArray(int $columnNumber = 0): array
+    {
+        if ($this->result === null) {
+            $this->execute();
+        }
+
+        $result = [];
+        while ($value = $this->result->fetchColumn($columnNumber)) {
+            $result[] = $value;
+        }
+
+        return $result;
     }
 
     /**
@@ -201,24 +221,57 @@ class Select extends Common implements \Countable
      * @return int
      */
     #[\ReturnTypeWillChange]
-    public function count()
+    /**
+     * Add chunked fetch for large result sets
+     * ! NEW METHOD
+     */
+    public function chunk(int $size, callable $callback): void
     {
-        $fluent = clone $this;
+        if ($this->result === null) {
+            $this->execute();
+        }
 
-        return (int)$fluent->select('COUNT(*)', true)->fetchColumn();
+        if ($this->result instanceof Result) {
+            $this->result->chunk($size, $callback);
+        }
     }
 
     /**
-     * @throws Exception
-     *
-     * @return \ArrayIterator|\PDOStatement
+     * Fix count() to use SQL COUNT instead of clone + fetchAll
+     * ! CHANGE: Use SELECT COUNT(*) instead of clone + fetchAll
      */
-    public function getIterator()
+    public function count(): int
     {
-        if ($this->fluent->convertRead === true) {
-            return new \ArrayIterator($this->fetchAll());
-        } else {
-            return $this->execute();
+        // Build COUNT(*) query
+        $countQuery = clone $this;
+        $countQuery->select('COUNT(*) as count', true);
+        $countQuery->limit(null);
+        $countQuery->offset(null);
+
+        $result = $countQuery->execute();
+        $row = $result->fetch();
+
+        return (int) ($row['count'] ?? 0);
+    }
+
+    /**
+     * Use iterator for memory-efficient fetching
+     * ! CHANGE: Don't call fetchAll() in getIterator
+     */
+    public function getIterator(): \Traversable
+    {
+        if ($this->result === null) {
+            $this->execute();
+        }
+
+        // Don't load all data into memory
+        if ($this->result instanceof Result) {
+            return $this->result;
+        }
+
+        // Fallback for PDOStatement
+        while ($row = $this->result->fetch($this->currentFetchMode)) {
+            yield $row;
         }
     }
 

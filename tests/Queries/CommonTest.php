@@ -1,6 +1,9 @@
 <?php
 
+declare(strict_types=1);
+
 require __DIR__ . '/../_resources/init.php';
+require __DIR__ . '/../Envms/FluentTest/Model/User.php';
 
 use PHPUnit\Framework\TestCase;
 use Envms\FluentTest\Model\User;

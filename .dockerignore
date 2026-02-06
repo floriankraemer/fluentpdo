@@ -1,0 +1,6 @@
+vendor/
+.git/
+.gitignore
+.idea/
+*.md
+composer.lock
