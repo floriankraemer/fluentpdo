@@ -79,11 +79,13 @@ class Insert extends Base
     {
         $first = current($values);
         $firstKey = key($values);
+
         if (is_string($firstKey)) {
-            // is one row array
             $this->addOneValue($values);
-        } elseif (is_array($first) && is_string(key($first))) {
-            // this is multi values
+            return $this;
+        }
+
+        if (is_array($first) && is_string(key($first))) {
             foreach ($values as $oneValue) {
                 $this->addOneValue($oneValue);
             }
@@ -121,12 +123,11 @@ class Insert extends Base
     {
         $result = parent::execute();
 
-        if ($result instanceof \PDOStatement || $result instanceof Result) {
-            $lastId = $this->fluent->getPdo()->lastInsertId($sequence);
-            return $lastId;
+        if (!$result instanceof \PDOStatement && !$result instanceof Result) {
+            return false;
         }
 
-        return false;
+        return $this->fluent->getPdo()->lastInsertId($sequence);
     }
 
     /**
@@ -136,15 +137,9 @@ class Insert extends Base
      *
      * @return bool
      */
-    public function executeWithoutId($sequence = null)
+    public function executeWithoutId($sequence = null): bool
     {
-        $result = parent::execute();
-
-        if ($result) {
-            return true;
-        }
-
-        return false;
+        return (bool) parent::execute();
     }
 
     /**
@@ -209,17 +204,12 @@ class Insert extends Base
      */
     protected function filterLiterals(array $statements): array
     {
-        $f = function ($item) {
-            return !$item instanceof Literal;
-        };
+        $isNotLiteral = fn($item) => !$item instanceof Literal;
 
-        return array_map(function ($item) use ($f) {
-            if (is_array($item)) {
-                return array_filter($item, $f);
-            }
-
-            return $item;
-        }, array_filter($statements, $f));
+        return array_map(
+            fn($item) => is_array($item) ? array_filter($item, $isNotLiteral) : $item,
+            array_filter($statements, $isNotLiteral)
+        );
     }
 
     /**
@@ -242,22 +232,25 @@ class Insert extends Base
      */
     private function addOneValue(array $oneValue): void
     {
-        // check if all $keys are strings
         foreach ($oneValue as $key => $value) {
             if (!is_string($key)) {
                 throw new Exception('INSERT query: All keys of value array have to be strings.');
             }
         }
+
         if (!$this->firstValue) {
             $this->firstValue = $oneValue;
         }
+
         if (!$this->columns) {
             /** @phpstan-ignore arrayValues.list */
             $this->columns = array_values(array_map('strval', array_keys($oneValue)));
         }
+
         if ($this->columns != array_keys($oneValue)) {
             throw new Exception('INSERT query: All VALUES have to same keys (columns).');
         }
+
         $this->statements['VALUES'][] = $oneValue;
     }
 

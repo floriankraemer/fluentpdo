@@ -56,11 +56,12 @@ class Select extends Common implements \Countable
      *
      * @return $this
      */
-    public function select($columns, bool $overrideDefault = false)
+    public function select($columns, bool $overrideDefault = false): self
     {
-        if ($overrideDefault === true) {
+        if ($overrideDefault) {
             $this->resetClause('SELECT');
-        } elseif ($columns === null) {
+        }
+        if ($columns === null) {
             return $this->resetClause('SELECT');
         }
 
@@ -96,12 +97,13 @@ class Select extends Common implements \Countable
      */
     public function fetchColumn(int $columnNumber = 0): int|string|false|null
     {
-        $s = $this->execute();
-        if ($s instanceof Result || $s instanceof \PDOStatement) {
-            return $s->fetchColumn($columnNumber);
+        $result = $this->execute();
+
+        if (!$result instanceof Result && !$result instanceof \PDOStatement) {
+            return false;
         }
 
-        return false;
+        return $result->fetchColumn($columnNumber);
     }
 
     /**
@@ -115,11 +117,13 @@ class Select extends Common implements \Countable
             $this->execute();
         }
 
+        if (!$this->result instanceof \PDOStatement) {
+            return [];
+        }
+
         $result = [];
-        if ($this->result instanceof \PDOStatement) {
-            while (($value = $this->result->fetchColumn($columnNumber)) !== false) {
-                $result[] = $value;
-            }
+        while (($value = $this->result->fetchColumn($columnNumber)) !== false) {
+            $result[] = $value;
         }
 
         return $result;
@@ -141,24 +145,19 @@ class Select extends Common implements \Countable
             $this->execute();
         }
 
-        if ($this->result === false || $this->result === null) {
+        if (!$this->result instanceof \PDOStatement) {
             return false;
         }
 
         $stmt = $this->result;
         $row = $stmt->fetch($this->currentFetchMode, $cursorOrientation);
 
-        if ($this->fluent->convertRead === true && $row !== false) {
+        if ($this->fluent->convertRead && $row !== false) {
             $row = Utilities::stringToNumeric($stmt, $row);
         }
 
-        if ($row && $column !== null) {
-            if (is_object($row)) {
-                return $row->{$column};
-            }
-            if (is_array($row)) {
-                return $row[$column];
-            }
+        if ($column !== null && $row !== false) {
+            return is_object($row) ? $row->{$column} : $row[$column];
         }
 
         return $row;
@@ -177,14 +176,13 @@ class Select extends Common implements \Countable
      */
     public function fetchPairs(string $key, string $value, bool $object = false): array|Result|\PDOStatement|false
     {
-        $s = $this->select("$key, $value", true)->asObject($object)->execute();
-        if ($s instanceof Result) {
-            return $s->fetchAll(\PDO::FETCH_KEY_PAIR);
+        $result = $this->select("$key, $value", true)->asObject($object)->execute();
+
+        if (!$result instanceof Result && !$result instanceof \PDOStatement) {
+            return false;
         }
-        if ($s instanceof \PDOStatement) {
-            return $s->fetchAll(\PDO::FETCH_KEY_PAIR);
-        }
-        return false;
+
+        return $result->fetchAll(\PDO::FETCH_KEY_PAIR);
     }
 
     /** Fetch all row
@@ -198,37 +196,35 @@ class Select extends Common implements \Countable
      */
     public function fetchAll(string $index = '', string $selectOnly = ''): array|false
     {
-        $indexAsArray = strpos($index, '[]');
+        $indexAsArray = str_contains($index, '[]');
+        $index = str_replace('[]', '', $index);
 
-        if ($indexAsArray !== false) {
-            $index = str_replace('[]', '', $index);
-        }
-
-        if ($selectOnly) {
+        if ($selectOnly !== '') {
             $this->select($index . ', ' . $selectOnly, true);
         }
 
-        if ($index) {
+        if ($index !== '') {
             return $this->buildSelectData($index, $indexAsArray);
         }
+
         $result = $this->execute();
-        if ($result instanceof Result) {
-            $rows = $result->fetchAll();
-            if ($this->fluent->convertRead === true) {
-                $converted = Utilities::stringToNumeric($result->getStatement(), $rows);
-                return is_array($converted) ? $converted : iterator_to_array($converted);
-            }
+
+        if (!$result instanceof Result && !$result instanceof \PDOStatement) {
+            return false;
+        }
+
+        $stmt = $result instanceof Result ? $result->getStatement() : $result;
+        $rows = $result instanceof Result
+            ? $result->fetchAll()
+            : $result->fetchAll(\PDO::FETCH_ASSOC);
+
+        if (!$this->fluent->convertRead) {
             return $rows;
         }
-        if ($result instanceof \PDOStatement) {
-            $rows = $result->fetchAll(\PDO::FETCH_ASSOC);
-            if ($this->fluent->convertRead === true) {
-                $converted = Utilities::stringToNumeric($result, $rows);
-                return is_array($converted) ? $converted : iterator_to_array($converted);
-            }
-            return $rows;
-        }
-        return false;
+
+        $converted = Utilities::stringToNumeric($stmt, $rows);
+
+        return is_array($converted) ? $converted : iterator_to_array($converted);
     }
 
     /**
@@ -248,18 +244,20 @@ class Select extends Common implements \Countable
             $this->execute();
         }
 
-        if ($this->result instanceof \PDOStatement) {
-            $chunk = [];
-            while (($row = $this->result->fetch($this->currentFetchMode)) !== false) {
-                $chunk[] = $row;
-                if (count($chunk) >= $size) {
-                    $callback($chunk);
-                    $chunk = [];
-                }
-            }
-            if ($chunk !== []) {
+        if (!$this->result instanceof \PDOStatement) {
+            return;
+        }
+
+        $chunk = [];
+        while (($row = $this->result->fetch($this->currentFetchMode)) !== false) {
+            $chunk[] = $row;
+            if (count($chunk) >= $size) {
                 $callback($chunk);
+                $chunk = [];
             }
+        }
+        if ($chunk !== []) {
+            $callback($chunk);
         }
     }
 
@@ -271,23 +269,20 @@ class Select extends Common implements \Countable
      */
     public function count(): int
     {
-        // Build COUNT(*) query
         $countQuery = clone $this;
         $countQuery->select('COUNT(*) as count', true);
         $countQuery->resetClause('LIMIT');
         $countQuery->resetClause('OFFSET');
 
         $result = $countQuery->execute();
+
         if (!$result instanceof Result) {
             return 0;
         }
-        // Use fetchColumn to get first column value (works regardless of column name)
-        $countVal = $result->fetchColumn(0);
-        if ($countVal === false || $countVal === null) {
-            return 0;
-        }
 
-        return max(0, (int) $countVal);
+        $countVal = $result->fetchColumn(0);
+
+        return $countVal === false || $countVal === null ? 0 : max(0, (int) $countVal);
     }
 
     /**
@@ -319,23 +314,23 @@ class Select extends Common implements \Countable
         $data = [];
 
         foreach ($this as $row) {
-            $key = null;
             if (is_array($row)) {
-                $rowArr = $row;
-                $key = array_key_exists($index, $rowArr) ? $rowArr[$index] : null;
-            } elseif (is_object($row)) {
+                $key = $row[$index] ?? null;
+            } else {
                 $key = $row->{$index} ?? null;
             }
 
-            if ($key !== null) {
-                if ($indexAsArray) {
-                    if (!isset($data[$key]) || !is_array($data[$key])) {
-                        $data[$key] = [];
-                    }
-                    $data[$key][] = $row;
-                } else {
-                    $data[$key] = $row;
+            if ($key === null) {
+                continue;
+            }
+
+            if ($indexAsArray) {
+                if (!isset($data[$key]) || !is_array($data[$key])) {
+                    $data[$key] = [];
                 }
+                $data[$key][] = $row;
+            } else {
+                $data[$key] = $row;
             }
         }
 

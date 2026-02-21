@@ -100,13 +100,13 @@ abstract class Base implements IteratorAggregate
     private function initClauses(): void
     {
         foreach ($this->clauses as $clause => $value) {
-            if ($value) {
-                $this->statements[$clause] = [];
-                $this->parameters[$clause] = [];
-            } else {
+            if (!$value) {
                 $this->statements[$clause] = null;
                 $this->parameters[$clause] = null;
+                continue;
             }
+            $this->statements[$clause] = [];
+            $this->parameters[$clause] = [];
         }
     }
 
@@ -146,21 +146,20 @@ abstract class Base implements IteratorAggregate
             return $this->resetClause($clause);
         }
 
-        if ($this->clauses[$clause]) {
-            // NEW (memory efficient): Use array_push instead of array_merge
-            if (is_array($statement)) {
-                array_push($this->statements[$clause], ...$statement);
-            } else {
-                $this->statements[$clause][] = $statement;
-            }
-
-            // Same for parameters
-            if (!empty($parameters)) {
-                array_push($this->parameters[$clause], ...$parameters);
-            }
-        } else {
+        if (!$this->clauses[$clause]) {
             $this->statements[$clause] = $statement;
             $this->parameters[$clause] = $parameters;
+            return $this;
+        }
+
+        if (is_array($statement)) {
+            array_push($this->statements[$clause], ...$statement);
+        } else {
+            $this->statements[$clause][] = $statement;
+        }
+
+        if (!empty($parameters)) {
+            array_push($this->parameters[$clause], ...$parameters);
         }
 
         return $this;
@@ -181,21 +180,17 @@ abstract class Base implements IteratorAggregate
             return $this->resetClause('WHERE');
         }
 
-        if (is_array($statement)) {
-            foreach ($statement as $s) {
-                $this->statements['WHERE'][] = [$separator, $s];
-            }
-        } else {
-            $this->statements['WHERE'][] = [$separator, $statement];
+        $statements = is_array($statement) ? $statement : [$statement];
+        foreach ($statements as $s) {
+            $this->statements['WHERE'][] = [$separator, $s];
         }
 
-        if (!empty($parameters)) {
-            foreach ($parameters as $key => $value) {
-                if (is_string($key) && strpos($key, ':') === 0) {
-                    $this->parameters['WHERE'][$key] = $value;
-                } else {
-                    $this->parameters['WHERE'][] = $value;
-                }
+        foreach ($parameters as $key => $value) {
+            $isNamedParam = is_string($key) && str_starts_with($key, ':');
+            if ($isNamedParam) {
+                $this->parameters['WHERE'][$key] = $value;
+            } else {
+                $this->parameters['WHERE'][] = $value;
             }
         }
 
@@ -211,11 +206,10 @@ abstract class Base implements IteratorAggregate
      */
     protected function resetClause(string $clause): self
     {
-        $this->statements[$clause] = null;
         $this->parameters[$clause] = [];
-        if (isset($this->clauses[$clause]) && $this->clauses[$clause]) {
-            $this->statements[$clause] = [];
-        }
+        $this->statements[$clause] = (isset($this->clauses[$clause]) && $this->clauses[$clause])
+            ? []
+            : null;
 
         return $this;
     }
@@ -248,32 +242,27 @@ abstract class Base implements IteratorAggregate
     public function execute(mixed $param = null): PDOStatement|Result|bool|int|string|null
     {
         $startTime = microtime(true);
-
         $query = $this->buildQuery();
         $parameters = $this->buildParameters();
 
         $this->prepareQuery($query);
 
-        if ($this->result instanceof PDOStatement) {
-            $this->setObjectFetchMode($this->result);
+        if (!$this->result instanceof PDOStatement) {
+            return $this->result;
+        }
 
-            $execTime = microtime(true);
+        $this->setObjectFetchMode($this->result);
+        $execTime = microtime(true);
+        $this->executeQuery($parameters, (float) $startTime, (float) $execTime);
+        $this->debug();
+        $this->clearState();
 
-            $this->executeQuery($parameters, (float) $startTime, (float) $execTime);
-            $this->debug();
-
-            // Clear state after execution to free memory
-            $this->clearState();
-
-            // Return Result wrapper only for SELECT queries that return data
-            // For INSERT/UPDATE/DELETE, return the PDOStatement as before
-            if ($this->result instanceof PDOStatement && $this instanceof \Envms\FluentPDO\Queries\Select) {
-                return new Result(
-                    $this->result,
-                    $this->currentFetchMode,
-                    $this->fluent->convertRead
-                );
-            }
+        if ($this->result instanceof PDOStatement && $this instanceof \Envms\FluentPDO\Queries\Select) {
+            return new Result(
+                $this->result,
+                $this->currentFetchMode,
+                $this->fluent->convertRead
+            );
         }
 
         return $this->result;
@@ -304,11 +293,7 @@ abstract class Base implements IteratorAggregate
      */
     public function getParameters(): array
     {
-        if ($this->builtParameters !== null) {
-            return $this->builtParameters;
-        }
-
-        return $this->buildParameters();
+        return $this->builtParameters ?? $this->buildParameters();
     }
 
     /**
@@ -375,11 +360,7 @@ abstract class Base implements IteratorAggregate
     {
         $query = $this->buildQuery();
 
-        if ($formatted) {
-            $query = Utilities::formatQuery($query);
-        }
-
-        return $query;
+        return $formatted ? Utilities::formatQuery($query) : $query;
     }
 
     /**
@@ -403,20 +384,23 @@ abstract class Base implements IteratorAggregate
      */
     protected function convertNullValues(): void
     {
-        $filterList = ['VALUES' => true, 'ON DUPLICATE KEY UPDATE' => true, 'SET' => true];
+        $nullableClauses = ['VALUES' => true, 'ON DUPLICATE KEY UPDATE' => true, 'SET' => true];
 
         foreach ($this->statements as $clause => $statement) {
-            if (isset($filterList[$clause])) {
-                if (isset($statement[0])) {
-                    for ($i = 0, $iMax = count($statement); $i < $iMax; $i++) {
-                        foreach ($statement[$i] as $key => $value) {
-                            $this->statements[$clause][$i][$key] = Utilities::nullToLiteral($value);
-                        }
+            if (!isset($nullableClauses[$clause])) {
+                continue;
+            }
+
+            $isIndexedArray = isset($statement[0]);
+            if ($isIndexedArray) {
+                for ($i = 0, $iMax = count($statement); $i < $iMax; $i++) {
+                    foreach ($statement[$i] as $key => $value) {
+                        $this->statements[$clause][$i][$key] = Utilities::nullToLiteral($value);
                     }
-                } else {
-                    foreach ($statement as $key => $value) {
-                        $this->statements[$clause][$key] = Utilities::nullToLiteral($value);
-                    }
+                }
+            } else {
+                foreach ($statement as $key => $value) {
+                    $this->statements[$clause][$key] = Utilities::nullToLiteral($value);
                 }
             }
         }
@@ -438,23 +422,24 @@ abstract class Base implements IteratorAggregate
             $this->convertNullValues();
         }
 
-        $query = '';
-
+        $queryParts = [];
         foreach ($this->clauses as $clause => $separator) {
-            if ($this->clauseNotEmpty($clause)) {
-                if (is_string($separator)) {
-                    $query .= " {$clause} " . implode($separator, $this->statements[$clause]);
-                } elseif ($separator === null) {
-                    $query .= " {$clause} {$this->statements[$clause]}";
-                } elseif (is_callable($separator)) {
-                    $query .= $separator();
-                } else {
-                    throw new Exception("Clause '$clause' is incorrectly set to '$separator'.");
-                }
+            if (!$this->clauseNotEmpty($clause)) {
+                continue;
+            }
+
+            if (is_string($separator)) {
+                $queryParts[] = " {$clause} " . implode($separator, $this->statements[$clause]);
+            } elseif ($separator === null) {
+                $queryParts[] = " {$clause} {$this->statements[$clause]}";
+            } elseif (is_callable($separator)) {
+                $queryParts[] = $separator();
+            } else {
+                throw new Exception("Clause '$clause' is incorrectly set to '$separator'.");
             }
         }
 
-        $this->builtQuery = trim(str_replace(['\.', '\:'], ['.', ':'], $query));
+        $this->builtQuery = trim(str_replace(['\.', '\:'], ['.', ':'], implode('', $queryParts)));
         return $this->builtQuery;
     }
 
@@ -473,16 +458,20 @@ abstract class Base implements IteratorAggregate
                 $clauses = Utilities::convertSqlWriteValues($clauses);
             }
 
-            if (is_array($clauses)) {
-                foreach ($clauses as $key => $value) {
-                    if (is_string($key) && strpos($key, ':') === 0) { // these are named params e.g. (':name' => 'Mark')
-                        $parameters += [$key => $value];
-                    } else {
-                        $parameters[] = $value;
-                    }
+            if (!is_array($clauses)) {
+                if ($clauses !== false && $clauses !== null) {
+                    $parameters[] = $clauses;
                 }
-            } elseif ($clauses !== false && $clauses !== null) {
-                $parameters[] = $clauses;
+                continue;
+            }
+
+            foreach ($clauses as $key => $value) {
+                $isNamedParam = is_string($key) && str_starts_with($key, ':');
+                if ($isNamedParam) {
+                    $parameters[$key] = $value;
+                } else {
+                    $parameters[] = $value;
+                }
             }
         }
 
@@ -520,11 +509,11 @@ abstract class Base implements IteratorAggregate
      */
     private function clauseNotEmpty(string $clause): bool
     {
-        if ((Utilities::isCountable($this->statements[$clause])) && $this->clauses[$clause]) {
-            return (bool)count($this->statements[$clause]);
+        if (!Utilities::isCountable($this->statements[$clause]) || !$this->clauses[$clause]) {
+            return (bool) $this->statements[$clause];
         }
 
-        return (bool)$this->statements[$clause];
+        return count($this->statements[$clause]) > 0;
     }
 
     /**
@@ -532,27 +521,19 @@ abstract class Base implements IteratorAggregate
      *
      * @throws Exception
      */
-    private function prepareQuery($query): void
+    private function prepareQuery(string $query): void
     {
         $this->result = $this->fluent->getPdo()->prepare($query);
 
-        /*
-         At this point, $result is a PDOStatement instance, or false.
-         PDO::prepare() does not reliably return errors. Some database drivers
-         do not support prepared statements, and PHP emulates them. Postgresql
-         does support prepared statements, but PHP does not call Postgresql's
-         prepare function until we call PDOStatement::execute() below.
-         If PDO::prepare() was consistent, this is where we would check
-         for prepare errors, such as invalid SQL.
-        */
+        if ($this->result !== false) {
+            return;
+        }
 
-        if ($this->result === false) {
-            $error = $this->fluent->getPdo()->errorInfo();
-            $this->message = "SQLSTATE: {$error[0]} - Driver Code: {$error[1]} - Message: {$error[2]}";
+        $error = $this->fluent->getPdo()->errorInfo();
+        $this->message = "SQLSTATE: {$error[0]} - Driver Code: {$error[1]} - Message: {$error[2]}";
 
-            if ($this->fluent->exceptionOnError === true) {
-                throw new Exception($this->message);
-            }
+        if ($this->fluent->exceptionOnError === true) {
+            throw new Exception($this->message);
         }
     }
 
@@ -565,18 +546,22 @@ abstract class Base implements IteratorAggregate
      */
     private function executeQuery(array $parameters, float $startTime, float $execTime): void
     {
-        if ($this->result instanceof PDOStatement && $this->result->execute($parameters) === true) {
+        if (!$this->result instanceof PDOStatement) {
+            return;
+        }
+
+        if ($this->result->execute($parameters) === true) {
             $this->executionTime = microtime(true) - $execTime;
             $this->totalTime = microtime(true) - $startTime;
-        } elseif ($this->result instanceof PDOStatement) {
-            $error = $this->result->errorInfo();
-            $this->message = "SQLSTATE: {$error[0]} - Driver Code: {$error[1]} - Message: {$error[2]}";
+            return;
+        }
 
-            if ($this->fluent->exceptionOnError === true) {
-                throw new Exception($this->message);
-            }
+        $error = $this->result->errorInfo();
+        $this->message = "SQLSTATE: {$error[0]} - Driver Code: {$error[1]} - Message: {$error[2]}";
+        $this->result = false;
 
-            $this->result = false;
+        if ($this->fluent->exceptionOnError === true) {
+            throw new Exception($this->message);
         }
     }
 
@@ -586,14 +571,13 @@ abstract class Base implements IteratorAggregate
     private function setObjectFetchMode(PDOStatement $result): void
     {
         if ($this->object !== false) {
-            if (is_string($this->object) && class_exists($this->object)) {
-                $this->currentFetchMode = PDO::FETCH_CLASS;
-                $result->setFetchMode($this->currentFetchMode, $this->object);
-            } else {
-                $this->currentFetchMode = PDO::FETCH_OBJ;
-                $result->setFetchMode($this->currentFetchMode);
-            }
-        } elseif ($this->fluent->getPdo()->getAttribute(PDO::ATTR_DEFAULT_FETCH_MODE) === PDO::FETCH_BOTH) {
+            $useCustomClass = is_string($this->object) && class_exists($this->object);
+            $this->currentFetchMode = $useCustomClass ? PDO::FETCH_CLASS : PDO::FETCH_OBJ;
+            $result->setFetchMode($this->currentFetchMode, ...($useCustomClass ? [$this->object] : []));
+            return;
+        }
+
+        if ($this->fluent->getPdo()->getAttribute(PDO::ATTR_DEFAULT_FETCH_MODE) === PDO::FETCH_BOTH) {
             $this->currentFetchMode = PDO::FETCH_ASSOC;
             $result->setFetchMode($this->currentFetchMode);
         }
@@ -606,43 +590,52 @@ abstract class Base implements IteratorAggregate
      */
     private function debug(): void
     {
-        if (!empty($this->fluent->debug)) {
-            if (!is_callable($this->fluent->debug)) {
-                $backtrace = '';
-                $query = $this->getQuery();
-                $parameters = $this->getParameters();
-                $debug = '';
+        if (empty($this->fluent->debug)) {
+            return;
+        }
 
-                if ($parameters) {
-                    $debug = '# parameters: ' . implode(', ', array_map([$this, 'quote'], $parameters)) . "\n";
-                }
+        if (is_callable($this->fluent->debug)) {
+            ($this->fluent->debug)($this);
+            return;
+        }
 
-                $debug .= $query;
+        $debug = $this->buildDebugOutput();
+        $output = $this->formatDebugOutput($debug);
 
-                foreach (debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 15) as $backtrace) {
-                    if (isset($backtrace['file']) && !$this->regex->compareLocation($backtrace['file'])) {
-                        // stop at the first file outside the FluentPDO source
-                        break;
-                    }
-                }
+        if (defined('STDERR') && is_resource(STDERR)) {
+            fwrite(STDERR, $output);
+        } else {
+            echo $output;
+        }
+    }
 
-                $time = sprintf('%0.3f', $this->totalTime * 1000) . 'ms';
-                $rows = ($this->result instanceof PDOStatement) ? $this->result->rowCount() : 0;
-                $file = $backtrace['file'] ?? 'unknown';
-                $line = $backtrace['line'] ?? 0;
-                $finalString = "# {$file}:{$line} ({$time}; rows = {$rows})\n{$debug}\n\n";
+    private function buildDebugOutput(): string
+    {
+        $parameters = $this->getParameters();
+        $debug = $parameters
+            ? '# parameters: ' . implode(', ', array_map([$this, 'quote'], $parameters)) . "\n"
+            : '';
+        $debug .= $this->getQuery();
 
-                // if STDERR is set, send there, otherwise just output the string
-                if (defined('STDERR') && is_resource(STDERR)) {
-                    fwrite(STDERR, $finalString);
-                } else {
-                    echo $finalString;
-                }
-            } else {
-                $debug = $this->fluent->debug;
-                $debug($this);
+        return $debug;
+    }
+
+    private function formatDebugOutput(string $debug): string
+    {
+        $backtrace = null;
+        foreach (debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 15) as $frame) {
+            if (isset($frame['file']) && !$this->regex->compareLocation($frame['file'])) {
+                $backtrace = $frame;
+                break;
             }
         }
+
+        $time = sprintf('%0.3f', $this->totalTime * 1000) . 'ms';
+        $rows = ($this->result instanceof PDOStatement) ? $this->result->rowCount() : 0;
+        $file = $backtrace['file'] ?? 'unknown';
+        $line = $backtrace['line'] ?? 0;
+
+        return "# {$file}:{$line} ({$time}; rows = {$rows})\n{$debug}\n\n";
     }
 
     /**

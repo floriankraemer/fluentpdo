@@ -44,29 +44,26 @@ class Delete extends Common
         $this->statements['DELETE FROM'] = $table;
         $this->statements['DELETE'] = $table;
 
-        if ($primaryKey !== null) {
-            $pkColumns = $fluent->getStructure()->getPrimaryKey($table);
+        if ($primaryKey === null) {
+            return;
+        }
 
-            // Handle composite primary key
-            if (is_array($pkColumns)) {
-                if (!is_array($primaryKey)) {
-                    throw new Exception(
-                        "Table '$table' has composite primary key, array of values required"
-                    );
-                }
+        $pkColumns = $fluent->getStructure()->getPrimaryKey($table);
 
-                foreach ($pkColumns as $column) {
-                    if (!isset($primaryKey[$column])) {
-                        throw new Exception(
-                            "Missing value for primary key column '$column'"
-                        );
-                    }
-                    $this->where($column, $primaryKey[$column]);
-                }
-            } else {
-                // Single primary key
-                $this->where($pkColumns, $primaryKey);
+        if (!is_array($pkColumns)) {
+            $this->where($pkColumns, $primaryKey);
+            return;
+        }
+
+        if (!is_array($primaryKey)) {
+            throw new Exception("Table '$table' has composite primary key, array of values required");
+        }
+
+        foreach ($pkColumns as $column) {
+            if (!isset($primaryKey[$column])) {
+                throw new Exception("Missing value for primary key column '$column'");
             }
+            $this->where($column, $primaryKey[$column]);
         }
     }
 
@@ -112,11 +109,12 @@ class Delete extends Common
         }
 
         $result = parent::execute();
-        if ($result instanceof Result || $result instanceof \PDOStatement) {
-            return $result->rowCount();
+
+        if (!$result instanceof Result && !$result instanceof \PDOStatement) {
+            return false;
         }
 
-        return false;
+        return $result->rowCount();
     }
 
     /**

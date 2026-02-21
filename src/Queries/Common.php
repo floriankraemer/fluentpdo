@@ -66,18 +66,15 @@ abstract class Common extends Base
         }
 
         $clause = Utilities::toUpperWords($name);
-
-        if ($clause == 'GROUP' || $clause == 'ORDER') {
-            $clause = "{$clause} BY";
-        }
-
-        if ($clause == 'COMMENT') {
-            $clause = "\n--";
-        }
+        $clause = match ($clause) {
+            'GROUP', 'ORDER' => "{$clause} BY",
+            'COMMENT' => "\n--",
+            default => $clause,
+        };
 
         $statement = array_shift($parameters);
 
-        if (strpos($clause, 'JOIN') !== false) {
+        if (str_contains($clause, 'JOIN')) {
             return $this->addJoinStatements($clause, $statement, $parameters);
         }
 
@@ -131,11 +128,10 @@ abstract class Common extends Base
             return $this;
         }
 
-        if (is_array($condition)) { // where(["column1 > ?" => 1, "column2 < ?" => 2])
+        if (is_array($condition)) {
             foreach ($condition as $key => $val) {
                 $this->where($key, $val);
             }
-
             return $this;
         }
 
@@ -145,45 +141,38 @@ abstract class Common extends Base
             return $this->addWhereStatement($condition, $separator);
         }
 
-        /*
-         * Check that there are 2 arguments, a condition and a parameter value. If the condition contains
-         * a parameter (? or :name), add them; it's up to the dev to be valid sql. Otherwise it's probably
-         * just an identifier, so construct a new condition based on the passed parameter value.
-         */
-        if (count($args) >= 2 && !$this->regex->sqlParameter($condition)) {
-            // condition is column only
-            if (is_null($parameters)) {
-                return $this->addWhereStatement("$condition IS NULL", $separator);
-            // ! CHANGE: Empty array should result in FALSE condition
-            } elseif (is_array($args[1])) {
-                if (empty($args[1])) {
-                    // Empty IN clause - always false
-                    return $this->addWhereStatement('1 = 0', $separator);
-                }
-
-                $in = $this->quote($args[1]);
-
-                return $this->addWhereStatement("$condition IN $in", $separator);
-            }
-
-            // don't parameterize the value if it's an instance of Literal
-            if ($parameters instanceof Literal) {
-                $condition = "{$condition} = {$parameters}";
-
-                return $this->addWhereStatement($condition, $separator);
-            } else {
-                $condition = "$condition = ?";
-            }
+        $hasParameterPlaceholder = $this->regex->sqlParameter($condition);
+        if (count($args) >= 2 && !$hasParameterPlaceholder) {
+            [$builtCondition, $builtParams] = $this->buildConditionFromValue($condition, $parameters, $args);
+            return $this->addWhereStatement($builtCondition, $separator, $builtParams);
         }
 
-        $args = [0 => $args[1]];
+        $params = is_array($parameters) ? $parameters : [$args[1]];
+        return $this->addWhereStatement($condition, $separator, $params);
+    }
 
-        // parameters can be passed as [1, 2, 3] and it will fill a condition like: id IN (?, ?, ?)
-        if (is_array($parameters)) {
-            $args = $parameters;
+    /**
+     * @param array<int, mixed> $args
+     * @return array{0: string, 1: array<int|string, mixed>}
+     */
+    private function buildConditionFromValue(string $condition, mixed $parameters, array $args): array
+    {
+        if ($parameters === null) {
+            return ["$condition IS NULL", []];
         }
 
-        return $this->addWhereStatement($condition, $separator, $args);
+        if (is_array($args[1])) {
+            if (empty($args[1])) {
+                return ['1 = 0', []];
+            }
+            return ["$condition IN " . $this->quote($args[1]), []];
+        }
+
+        if ($parameters instanceof Literal) {
+            return ["{$condition} = {$parameters}", []];
+        }
+
+        return ["$condition = ?", [$parameters]];
     }
 
     /**
@@ -196,11 +185,10 @@ abstract class Common extends Base
      */
     public function whereOr(string|array $condition, mixed $parameters = [])
     {
-        if (is_array($condition)) { // where(["column1 > ?" => 1, "column2 < ?" => 2])
+        if (is_array($condition)) {
             foreach ($condition as $key => $val) {
                 $this->whereOr($key, $val);
             }
-
             return $this;
         }
 
@@ -218,17 +206,15 @@ abstract class Common extends Base
     /**
      * @return string
      */
-    protected function getClauseWhere() {
+    protected function getClauseWhere(): string
+    {
         $firstStatement = array_shift($this->statements['WHERE']);
-        $query = " WHERE {$firstStatement[1]}"; // append first statement to WHERE without condition
+        $query = " WHERE {$firstStatement[1]}";
 
-        if (!empty($this->statements['WHERE'])) {
-            foreach ($this->statements['WHERE'] as $statement) {
-                $query .= " {$statement[0]} {$statement[1]}"; // [0] -> AND/OR [1] -> field = ?
-            }
+        foreach ($this->statements['WHERE'] as $statement) {
+            $query .= " {$statement[0]} {$statement[1]}";
         }
 
-        // put the first statement back onto the beginning of the array in case we want to run this again
         array_unshift($this->statements['WHERE'], $firstStatement);
 
         return $query;
@@ -243,28 +229,25 @@ abstract class Common extends Base
      *
      * @return $this
      */
-    private function addJoinStatements(string $clause, ?string $statement, array $parameters = [])
+    private function addJoinStatements(string $clause, ?string $statement, array $parameters = []): self
     {
         if ($statement === null) {
             $this->joins = [];
-
             return $this->resetClause('JOIN');
         }
 
-        if (array_search(substr($statement, 0, -1), $this->joins) !== false) {
+        if (in_array(substr($statement, 0, -1), $this->joins)) {
             return $this;
         }
 
-        list($joinAlias, $joinTable) = $this->setJoinNameAlias($statement);
+        [$joinAlias, $joinTable] = $this->setJoinNameAlias($statement);
 
         $statementUpper = strtoupper($statement);
-        if (strpos($statementUpper, ' ON ') !== false || strpos($statementUpper, ' USING') !== false) {
+        if (str_contains($statementUpper, ' ON ') || str_contains($statementUpper, ' USING')) {
             return $this->addRawJoins($clause, $statement, $parameters, $joinAlias, $joinTable);
         }
 
         $mainTable = $this->setMainTable();
-
-        // if $joinTable does not end with a dot or colon, append one
         $lastChar = substr($joinTable, -1);
         if ($lastChar !== '.' && $lastChar !== ':') {
             $joinTable .= '.';
@@ -272,19 +255,17 @@ abstract class Common extends Base
 
         $this->regex->tableJoin($joinTable, $matches);
 
-        // used for applying the table alias
         if (empty($matches[1])) {
             return $this;
         }
+
         $lastItem = array_pop($matches[1]);
-        array_push($matches[1], $lastItem);
+        $matches[1][] = $lastItem;
 
         foreach ($matches[1] as $joinItem) {
             if ($this->matchTableWithJoin($mainTable, $joinItem)) {
-                // this is still the same table so we don't need to add the same join
                 continue;
             }
-
             $mainTable = $this->applyTableJoin($clause, $parameters, $mainTable, $joinItem, $lastItem, $joinAlias);
         }
 
@@ -301,7 +282,7 @@ abstract class Common extends Base
      *
      * @return string
      */
-    private function createJoinStatement(string $clause, string $mainTable, string $joinTable, string $joinAlias = '')
+    private function createJoinStatement(string $clause, string $mainTable, string $joinTable, string $joinAlias = ''): string
     {
         $mainTableLast = substr($mainTable, -1);
         if ($mainTableLast === ':' || $mainTableLast === '.') {
@@ -310,33 +291,28 @@ abstract class Common extends Base
 
         $referenceDirection = substr($joinTable, -1);
         $joinTable = substr($joinTable, 0, -1);
-        $asJoinAlias = '';
+        $asJoinAlias = $joinAlias !== '' ? " AS $joinAlias" : '';
+        $joinAlias = $joinAlias !== '' ? $joinAlias : $joinTable;
 
-        if (!empty($joinAlias)) {
-            $asJoinAlias = " AS $joinAlias";
-        } else {
-            $joinAlias = $joinTable;
-        }
-
-        if (in_array($joinAlias, $this->joins)) { // if the join exists don't create it again
+        if (in_array($joinAlias, $this->joins)) {
             return '';
-        } else {
-            $this->joins[] = $joinAlias;
         }
 
-        if ($referenceDirection == ':') { // back reference
+        $this->joins[] = $joinAlias;
+
+        if ($referenceDirection === ':') {
             $primaryKey = $this->getStructure()->getPrimaryKey($mainTable);
             $foreignKey = $this->getStructure()->getForeignKey($mainTable);
             $pkStr = is_array($primaryKey) ? implode(', ', $primaryKey) : $primaryKey;
 
             return " $clause $joinTable$asJoinAlias ON $joinAlias.$foreignKey = $mainTable.$pkStr";
-        } else {
-            $primaryKey = $this->getStructure()->getPrimaryKey($joinTable);
-            $foreignKey = $this->getStructure()->getForeignKey($joinTable);
-            $pkStr = is_array($primaryKey) ? implode(', ', $primaryKey) : $primaryKey;
-
-            return " $clause $joinTable$asJoinAlias ON $joinAlias.$pkStr = $mainTable.$foreignKey";
         }
+
+        $primaryKey = $this->getStructure()->getPrimaryKey($joinTable);
+        $foreignKey = $this->getStructure()->getForeignKey($joinTable);
+        $pkStr = is_array($primaryKey) ? implode(', ', $primaryKey) : $primaryKey;
+
+        return " $clause $joinTable$asJoinAlias ON $joinAlias.$pkStr = $mainTable.$foreignKey";
     }
 
     /**
@@ -353,43 +329,29 @@ abstract class Common extends Base
         }
 
         $separator = null;
-        // if we're in here, this is a where clause
         if (is_array($statement)) {
             $separator = $statement[0];
             $statement = $statement[1];
         }
 
-        // matches a table name made of any printable characters followed by a dot/colon,
-        // followed by any letters, numbers and most punctuation (to exclude '*')
         $this->regex->tableJoinFull($statement, $matches);
 
         foreach ($matches[1] as $join) {
-            // remove the trailing dot and compare with the joins we already have
             if (!in_array(substr($join, 0, -1), $this->joins)) {
                 $this->addJoinStatements('LEFT JOIN', $join);
             }
         }
 
-        // don't rewrite table from other databases
         foreach ($this->joins as $join) {
-            if (strpos($join, '.') !== false && strpos($statement, $join) === 0) {
-                // rebuild the where statement
-                if ($separator !== null) {
-                    return [$separator, $statement];
-                }
-                return $statement;
+            if (str_contains($join, '.') && str_starts_with($statement, $join)) {
+                return $separator !== null ? [$separator, $statement] : $statement;
             }
         }
 
         $statement = $this->regex->removeAdditionalJoins($statement);
         $statement = is_array($statement) ? implode('', $statement) : (string) $statement;
 
-        // rebuild the where statement
-        if ($separator !== null) {
-            return [$separator, $statement];
-        }
-
-        return $statement;
+        return $separator !== null ? [$separator, $statement] : $statement;
     }
 
     /**
@@ -399,13 +361,13 @@ abstract class Common extends Base
      */
     protected function buildQuery(): string
     {
-        // first create extra join from statements with columns with referenced tables
         $statementsWithReferences = ['WHERE', 'SELECT', 'GROUP BY', 'ORDER BY'];
 
         foreach ($statementsWithReferences as $clause) {
-            if (array_key_exists($clause, $this->statements)) {
-                $this->statements[$clause] = array_map([$this, 'createUndefinedJoins'], $this->statements[$clause]);
+            if (!array_key_exists($clause, $this->statements)) {
+                continue;
             }
+            $this->statements[$clause] = array_map([$this, 'createUndefinedJoins'], $this->statements[$clause]);
         }
 
         return parent::buildQuery();
@@ -418,11 +380,9 @@ abstract class Common extends Base
      */
     protected function isEscapedJoin(string|array $statement): bool
     {
-        if (is_array($statement)) {
-            $statement = $statement[1];
-        }
+        $stmt = is_array($statement) ? $statement[1] : $statement;
 
-        return !$this->isSmartJoinEnabled || strpos($statement, '\.') !== false || strpos($statement, '\:') !== false;
+        return !$this->isSmartJoinEnabled || str_contains($stmt, '\.') || str_contains($stmt, '\:');
     }
 
     /**
@@ -432,15 +392,12 @@ abstract class Common extends Base
      */
     private function setJoinNameAlias(string $statement): array
     {
-        $this->regex->tableAlias($statement, $matches); // store any found alias in $matches
+        $this->regex->tableAlias($statement, $matches);
         $joinAlias = '';
-        $joinTable = '';
+        $joinTable = $matches[1] ?? '';
 
-        if ($matches) {
-            $joinTable = $matches[1];
-            if (isset($matches[4]) && !in_array(strtoupper($matches[4]), ['ON', 'USING'])) {
-                $joinAlias = $matches[4];
-            }
+        if ($matches && isset($matches[4]) && !in_array(strtoupper($matches[4]), ['ON', 'USING'])) {
+            $joinAlias = $matches[4];
         }
 
         return [$joinAlias, $joinTable];
@@ -466,30 +423,28 @@ abstract class Common extends Base
      *
      * @return $this
      */
-    private function addRawJoins(string $clause, string $statement, array $parameters, string $joinAlias, string $joinTable)
+    private function addRawJoins(string $clause, string $statement, array $parameters, string $joinAlias, string $joinTable): self
     {
-        if (!$joinAlias) {
-            $joinAlias = $joinTable;
-        }
+        $joinAlias = $joinAlias !== '' ? $joinAlias : $joinTable;
 
         if (in_array($joinAlias, $this->joins)) {
             return $this;
-        } else {
-            $this->joins[] = $joinAlias;
-            $statement = " $clause $statement";
-
-            return $this->addStatement('JOIN', $statement, $parameters);
         }
+
+        $this->joins[] = $joinAlias;
+
+        return $this->addStatement('JOIN', " $clause $statement", $parameters);
     }
 
     /**
      * @return string
      */
-    private function setMainTable()
+    private function setMainTable(): string
     {
         if (isset($this->statements['FROM'])) {
             return $this->statements['FROM'];
-        } elseif (isset($this->statements['UPDATE'])) {
+        }
+        if (isset($this->statements['UPDATE'])) {
             return $this->statements['UPDATE'];
         }
 
@@ -508,15 +463,10 @@ abstract class Common extends Base
      */
     private function applyTableJoin(string $clause, array $parameters, string $mainTable, string $joinItem, string $lastItem, string $joinAlias): string
     {
-        $alias = '';
-
-        if ($joinItem == $lastItem) {
-            $alias = $joinAlias; // use $joinAlias only for $lastItem
-        }
-
+        $alias = $joinItem === $lastItem ? $joinAlias : '';
         $newJoin = $this->createJoinStatement($clause, $mainTable, $joinItem, $alias);
 
-        if ($newJoin) {
+        if ($newJoin !== '') {
             $this->addStatement('JOIN', $newJoin, $parameters);
         }
 
@@ -525,14 +475,13 @@ abstract class Common extends Base
 
     public function __clone(): void
     {
-        // First call parent __clone
         parent::__clone();
 
-        // Fix circular references in clauses
         foreach ($this->clauses as $clause => $value) {
-            if (is_array($value) && isset($value[0]) && $value[0] instanceof Common) {
-                $this->clauses[$clause][0] = $this;
+            if (!is_array($value) || !isset($value[0]) || !$value[0] instanceof Common) {
+                continue;
             }
+            $this->clauses[$clause][0] = $this;
         }
     }
 }

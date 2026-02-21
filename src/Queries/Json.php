@@ -50,10 +50,7 @@ class Json extends Common
 
         $this->statements['SELECT'][] = '';
         $this->joins[] = $this->fromAlias;
-
-        if (isset($fluent->convertTypes) && $fluent->convertTypes) {
-            $this->convertTypes = true;
-        }
+        $this->convertTypes = isset($fluent->convertTypes) && $fluent->convertTypes;
     }
 
 }

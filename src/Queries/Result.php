@@ -20,6 +20,8 @@ class Result implements Iterator, Countable
 
     /** @var array<string, mixed>|object|null */
     private $currentRow = null;
+
+    /** @var int<0, max>|null */
     private ?int $cachedCount = null;
 
     public function __construct(
@@ -74,7 +76,7 @@ class Result implements Iterator, Countable
     public function chunk(int $size, callable $callback): void
     {
         $chunk = [];
-        while ($row = $this->statement->fetch($this->fetchMode)) {
+        while (($row = $this->statement->fetch($this->fetchMode)) !== false) {
             $chunk[] = $row;
 
             if (count($chunk) >= $size) {
@@ -83,7 +85,7 @@ class Result implements Iterator, Countable
             }
         }
 
-        if (!empty($chunk)) {
+        if ($chunk !== []) {
             $callback($chunk);
         }
     }
@@ -118,17 +120,17 @@ class Result implements Iterator, Countable
         return $this->currentRow !== null;
     }
 
-    // Countable implementation
     /**
      * @return int<0, max>
      */
     public function count(): int
     {
-        if ($this->cachedCount === null) {
-            $count = $this->statement->rowCount();
-            $this->cachedCount = max(0, $count);
+        if ($this->cachedCount !== null) {
+            return $this->cachedCount;
         }
-        /** @var int<0, max> */
+
+        $this->cachedCount = max(0, $this->statement->rowCount());
+
         return $this->cachedCount;
     }
 

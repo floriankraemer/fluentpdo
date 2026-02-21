@@ -58,16 +58,18 @@ class Update extends Common
         if (!$fieldOrArray) {
             return $this;
         }
+
         if (is_string($fieldOrArray) && $value !== false) {
             $this->statements['SET'][$fieldOrArray] = $value;
-        } else {
-            if (!is_array($fieldOrArray)) {
-                throw new Exception('You must pass a value, or provide the SET list as an associative array. column => value');
-            } else {
-                foreach ($fieldOrArray as $field => $value) {
-                    $this->statements['SET'][$field] = $value;
-                }
-            }
+            return $this;
+        }
+
+        if (!is_array($fieldOrArray)) {
+            throw new Exception('You must pass a value, or provide the SET list as an associative array. column => value');
+        }
+
+        foreach ($fieldOrArray as $field => $value) {
+            $this->statements['SET'][$field] = $value;
         }
 
         return $this;
@@ -94,11 +96,11 @@ class Update extends Common
             return $result;
         }
 
-        if ($result instanceof Result || $result instanceof \PDOStatement) {
-            return $result->rowCount();
+        if (!$result instanceof Result && !$result instanceof \PDOStatement) {
+            return false;
         }
 
-        return false;
+        return $result->rowCount();
     }
 
     /**
@@ -112,14 +114,14 @@ class Update extends Common
     /**
      * @return string
      */
-    protected function getClauseSet()
+    protected function getClauseSet(): string
     {
         $setArray = [];
         foreach ($this->statements['SET'] as $field => $value) {
-            // named params are being used here
             if (is_array($value)) {
                 $firstKey = key($value);
-                if (is_string($firstKey) && strpos($firstKey, ':') === 0) {
+                $isNamedParam = is_string($firstKey) && str_starts_with($firstKey, ':');
+                if ($isNamedParam) {
                     $setArray[] = $field . ' = ' . $firstKey;
                     $this->parameters['SET'][$firstKey] = $value[$firstKey];
                 } else {
