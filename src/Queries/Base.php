@@ -229,6 +229,7 @@ abstract class Base implements IteratorAggregate
             /** @var \Traversable<int, array<string, mixed>|object> $result */
             return $result;
         }
+
         return new \EmptyIterator();
     }
 
@@ -639,25 +640,34 @@ abstract class Base implements IteratorAggregate
     }
 
     /**
-     * Fix __clone to deep clone all arrays
-     * ! CHANGE: Complete implementation
+     * Deep clone arrays recursively (values like strings/objects are copied by reference).
+     *
+     * @param array<int|string, mixed> $array
+     * @return array<int|string, mixed>
      */
+    private function deepCloneArray(array $array): array
+    {
+        $result = [];
+        foreach ($array as $key => $value) {
+            $result[$key] = is_array($value) ? $this->deepCloneArray($value) : $value;
+        }
+        return $result;
+    }
+
     public function __clone(): void
     {
-        // Deep clone all arrays
         $this->statements = array_map(
-            fn($stmt) => is_array($stmt) ? [...$stmt] : $stmt,
+            fn($stmt) => is_array($stmt) ? $this->deepCloneArray($stmt) : $stmt,
             $this->statements
         );
 
         $this->parameters = array_map(
-            fn($param) => is_array($param) ? [...$param] : $param,
+            fn($param) => is_array($param) ? $this->deepCloneArray($param) : $param,
             $this->parameters
         );
 
         $this->joins = [...$this->joins];
 
-        // Reset execution state
         $this->result = null;
         $this->executed = false;
         $this->builtParameters = null;

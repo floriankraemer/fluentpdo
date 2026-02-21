@@ -6,7 +6,7 @@ namespace Envms\FluentPDO\Dialect;
 
 use PDO;
 
-class DialectFactory
+class DialectFactory implements DialectFactoryInterface
 {
     public static function create(PDO $pdo): DialectInterface
     {
@@ -17,7 +17,7 @@ class DialectFactory
             'pgsql' => new PostgreSQLDialect($pdo),
             'sqlite' => new SQLiteDialect($pdo),
             'sqlsrv', 'odbc' => new SQLServerDialect($pdo),
-            default => throw new \RuntimeException("Unsupported database driver: $driver")
+            default => throw DialectException::withUnsupportedDriver($driver)
         };
     }
 }
