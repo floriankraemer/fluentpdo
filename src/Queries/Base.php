@@ -118,8 +118,9 @@ abstract class Base implements IteratorAggregate
     {
         $this->statements = [];
         $this->parameters = [];
+        $this->joins = [];
         $this->executed = true;
-        // Keep $builtParameters and $builtQuery for methods to work after execution
+        // Keep $builtParameters and $builtQuery for getQuery()/getParameters() after execution
     }
 
     /**
@@ -170,7 +171,7 @@ abstract class Base implements IteratorAggregate
      *
      * @param string|array<int, string> $statement
      * @param string $separator - should be AND or OR
-     * @param array<int, mixed> $parameters
+     * @param array<int|string, mixed> $parameters - positional (? placeholders) or named (':name' => value)
      *
      * @return $this
      */
@@ -188,7 +189,15 @@ abstract class Base implements IteratorAggregate
             $this->statements['WHERE'][] = [$separator, $statement];
         }
 
-        $this->parameters['WHERE'] = array_merge($this->parameters['WHERE'], $parameters);
+        if (!empty($parameters)) {
+            foreach ($parameters as $key => $value) {
+                if (is_string($key) && strpos($key, ':') === 0) {
+                    $this->parameters['WHERE'][$key] = $value;
+                } else {
+                    $this->parameters['WHERE'][] = $value;
+                }
+            }
+        }
 
         return $this;
     }
@@ -394,10 +403,10 @@ abstract class Base implements IteratorAggregate
      */
     protected function convertNullValues(): void
     {
-        $filterList = ['VALUES', 'ON DUPLICATE KEY UPDATE', 'SET'];
+        $filterList = ['VALUES' => true, 'ON DUPLICATE KEY UPDATE' => true, 'SET' => true];
 
         foreach ($this->statements as $clause => $statement) {
-            if (in_array($clause, $filterList)) {
+            if (isset($filterList[$clause])) {
                 if (isset($statement[0])) {
                     for ($i = 0, $iMax = count($statement); $i < $iMax; $i++) {
                         foreach ($statement[$i] as $key => $value) {
@@ -610,7 +619,7 @@ abstract class Base implements IteratorAggregate
 
                 $debug .= $query;
 
-                foreach (debug_backtrace() as $backtrace) {
+                foreach (debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 15) as $backtrace) {
                     if (isset($backtrace['file']) && !$this->regex->compareLocation($backtrace['file'])) {
                         // stop at the first file outside the FluentPDO source
                         break;

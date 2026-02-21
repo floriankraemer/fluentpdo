@@ -11,6 +11,8 @@ use Envms\FluentPDO\Queries\Result;
  */
 class Utilities
 {
+    private static ?Regex $regex = null;
+
     /**
      * Convert "camelCaseWord" to "CAMEL CASE WORD"
      *
@@ -20,7 +22,7 @@ class Utilities
      */
     public static function toUpperWords(string $string): string
     {
-        $regex = new Regex();
+        $regex = self::$regex ??= new Regex();
         $spaced = $regex->camelCaseSpaced($string);
         $result = is_array($spaced) ? implode('', $spaced) : (string) ($spaced ?? '');
         return trim(strtoupper($result));
@@ -33,7 +35,7 @@ class Utilities
      */
     public static function formatQuery(string|\Stringable $query): string
     {
-        $regex = new Regex();
+        $regex = self::$regex ??= new Regex();
         $queryStr = is_string($query) ? $query : $query->__toString();
 
         $queryStr = $regex->splitClauses($queryStr);

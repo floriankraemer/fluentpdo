@@ -257,14 +257,16 @@ abstract class Common extends Base
 
         list($joinAlias, $joinTable) = $this->setJoinNameAlias($statement);
 
-        if (strpos(strtoupper($statement), ' ON ') !== false || strpos(strtoupper($statement), ' USING') !== false) {
+        $statementUpper = strtoupper($statement);
+        if (strpos($statementUpper, ' ON ') !== false || strpos($statementUpper, ' USING') !== false) {
             return $this->addRawJoins($clause, $statement, $parameters, $joinAlias, $joinTable);
         }
 
         $mainTable = $this->setMainTable();
 
         // if $joinTable does not end with a dot or colon, append one
-        if (!in_array(substr($joinTable, -1), ['.', ':'])) {
+        $lastChar = substr($joinTable, -1);
+        if ($lastChar !== '.' && $lastChar !== ':') {
             $joinTable .= '.';
         }
 
@@ -301,7 +303,8 @@ abstract class Common extends Base
      */
     private function createJoinStatement(string $clause, string $mainTable, string $joinTable, string $joinAlias = '')
     {
-        if (in_array(substr($mainTable, -1), [':', '.'])) {
+        $mainTableLast = substr($mainTable, -1);
+        if ($mainTableLast === ':' || $mainTableLast === '.') {
             $mainTable = substr($mainTable, 0, -1);
         }
 
