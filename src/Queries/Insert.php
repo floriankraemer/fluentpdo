@@ -252,6 +252,7 @@ class Insert extends Base
             $this->firstValue = $oneValue;
         }
         if (!$this->columns) {
+            /** @phpstan-ignore arrayValues.list */
             $this->columns = array_values(array_map('strval', array_keys($oneValue)));
         }
         if ($this->columns != array_keys($oneValue)) {

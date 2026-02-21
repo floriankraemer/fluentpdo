@@ -189,12 +189,12 @@ abstract class Common extends Base
     /**
      * Add where appending with OR
      *
-     * @param string $condition  - possibly containing ? or :name (PDO syntax)
+     * @param string|array<string, mixed> $condition  - possibly containing ? or :name (PDO syntax)
      * @param mixed  $parameters
      *
      * @return $this
      */
-    public function whereOr($condition, $parameters = [])
+    public function whereOr(string|array $condition, mixed $parameters = [])
     {
         if (is_array($condition)) { // where(["column1 > ?" => 1, "column2 < ?" => 2])
             foreach ($condition as $key => $val) {
@@ -275,7 +275,6 @@ abstract class Common extends Base
             return $this;
         }
         $lastItem = array_pop($matches[1]);
-        assert($lastItem !== false);
         array_push($matches[1], $lastItem);
 
         foreach ($matches[1] as $joinItem) {
@@ -356,8 +355,6 @@ abstract class Common extends Base
             $separator = $statement[0];
             $statement = $statement[1];
         }
-
-        assert(is_string($statement));
 
         // matches a table name made of any printable characters followed by a dot/colon,
         // followed by any letters, numbers and most punctuation (to exclude '*')

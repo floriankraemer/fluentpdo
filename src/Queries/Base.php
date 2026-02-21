@@ -22,7 +22,7 @@ abstract class Base implements IteratorAggregate
     /** @var float */
     private $executionTime;
 
-    /** @var bool|object */
+    /** @var bool|object|string - false=array, true=stdClass, string=class name */
     private $object = false;
 
     /** @var Query */
@@ -281,9 +281,9 @@ abstract class Base implements IteratorAggregate
     /**
      * Get PDOStatement result
      *
-     * @return PDOStatement|null|bool
+     * @return PDOStatement|null|false
      */
-    public function getResult()
+    public function getResult(): PDOStatement|null|false
     {
         return $this->result;
     }
@@ -376,13 +376,13 @@ abstract class Base implements IteratorAggregate
     /**
      * Select an item as object
      *
-     * @param object|boolean $object  If set to true, items are returned as stdClass, otherwise a class
-     *                                name can be passed and a new instance of this class is returned.
-     *                                Can be set to false to return items as an associative array.
+     * @param object|bool|string $object  If set to true, items are returned as stdClass, otherwise a class
+     *                                    name can be passed and a new instance of this class is returned.
+     *                                    Can be set to false to return items as an associative array.
      *
      * @return $this
      */
-    public function asObject($object = true)
+    public function asObject(object|bool|string $object = true)
     {
         $this->object = $object;
 

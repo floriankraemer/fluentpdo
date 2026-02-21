@@ -126,7 +126,7 @@ class Result implements Iterator, Countable
     {
         if ($this->cachedCount === null) {
             $count = $this->statement->rowCount();
-            $this->cachedCount = $count < 0 ? 0 : $count;
+            $this->cachedCount = max(0, $count);
         }
         /** @var int<0, max> */
         return $this->cachedCount;

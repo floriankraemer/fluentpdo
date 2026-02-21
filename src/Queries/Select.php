@@ -116,11 +116,7 @@ class Select extends Common implements \Countable
         }
 
         $result = [];
-        if ($this->result instanceof Result) {
-            while (($value = $this->result->fetchColumn($columnNumber)) !== false) {
-                $result[] = $value;
-            }
-        } elseif ($this->result instanceof \PDOStatement) {
+        if ($this->result instanceof \PDOStatement) {
             while (($value = $this->result->fetchColumn($columnNumber)) !== false) {
                 $result[] = $value;
             }
@@ -149,7 +145,7 @@ class Select extends Common implements \Countable
             return false;
         }
 
-        $stmt = $this->result instanceof Result ? $this->result->getStatement() : $this->result;
+        $stmt = $this->result;
         $row = $stmt->fetch($this->currentFetchMode, $cursorOrientation);
 
         if ($this->fluent->convertRead === true && $row !== false) {
@@ -252,8 +248,18 @@ class Select extends Common implements \Countable
             $this->execute();
         }
 
-        if ($this->result instanceof Result) {
-            $this->result->chunk($size, $callback);
+        if ($this->result instanceof \PDOStatement) {
+            $chunk = [];
+            while (($row = $this->result->fetch($this->currentFetchMode)) !== false) {
+                $chunk[] = $row;
+                if (count($chunk) >= $size) {
+                    $callback($chunk);
+                    $chunk = [];
+                }
+            }
+            if ($chunk !== []) {
+                $callback($chunk);
+            }
         }
     }
 
@@ -294,12 +300,7 @@ class Select extends Common implements \Countable
             $this->execute();
         }
 
-        // Don't load all data into memory
-        if ($this->result instanceof Result) {
-            return $this->result;
-        }
-
-        // Fallback for PDOStatement
+        // Use PDOStatement for memory-efficient iteration
         if ($this->result instanceof \PDOStatement) {
             while (($row = $this->result->fetch($this->currentFetchMode)) !== false) {
                 yield $row;
