@@ -10,6 +10,8 @@ use Envms\FluentPDO\Dialect\DialectInterface;
 
 /**
  * Base query builder
+ *
+ * @implements IteratorAggregate<int, array<string, mixed>>
  */
 abstract class Base implements IteratorAggregate
 {
@@ -20,20 +22,20 @@ abstract class Base implements IteratorAggregate
     /** @var float */
     private $executionTime;
 
-    /** @var bool */
+    /** @var bool|object */
     private $object = false;
 
     /** @var Query */
     protected $fluent;
 
-    /** @var PDOStatement|null|bool */
+    /** @var PDOStatement|null|false */
     protected $result;
 
-    /** @var array - definition clauses */
+    /** @var array<string, mixed> - definition clauses */
     protected $clauses = [];
-    /** @var array */
+    /** @var array<string, mixed> */
     protected $statements = [];
-    /** @var array */
+    /** @var array<string, mixed>|array<int|string, mixed> */
     protected $parameters = [];
 
     /** @var DialectInterface */
@@ -42,10 +44,7 @@ abstract class Base implements IteratorAggregate
     /** @var Regex */
     protected $regex;
 
-    /** @var bool */
-    private $executed = false;
-
-    /** @var array|null */
+    /** @var array<int|string, mixed>|null */
     private ?array $builtParameters = null;
 
     /** @var string|null */
@@ -57,11 +56,17 @@ abstract class Base implements IteratorAggregate
     /** @var int */
     protected $currentFetchMode;
 
+    /** @var array<int, string> - used by Common for JOIN tracking, empty in Base */
+    protected $joins = [];
+
+    /** @var bool - tracks if query was executed (for __clone reset) */
+    private bool $executed = false;
+
     /**
      * BaseQuery constructor.
      *
      * @param Query $fluent
-     * @param       $clauses
+     * @param array<string, mixed> $clauses
      */
     protected function __construct(Query $fluent, array $clauses)
     {
@@ -118,15 +123,23 @@ abstract class Base implements IteratorAggregate
     }
 
     /**
+     * Check if query has been executed
+     */
+    protected function isExecuted(): bool
+    {
+        return $this->executed;
+    }
+
+    /**
      * Add statement for all clauses except WHERE
      *
-     * @param       $clause
-     * @param       $statement
-     * @param array $parameters
+     * @param string $clause
+     * @param string|array<int, string>|int|null $statement
+     * @param array<int, mixed> $parameters
      *
      * @return $this
      */
-    protected function addStatement($clause, $statement, $parameters = []): self
+    protected function addStatement(string $clause, string|array|int|null $statement, array $parameters = []): self
     {
         if ($statement === null) {
             return $this->resetClause($clause);
@@ -155,13 +168,13 @@ abstract class Base implements IteratorAggregate
     /**
      * Add statement for all kind of clauses
      *
-     * @param        $statement
+     * @param string|array<int, string> $statement
      * @param string $separator - should be AND or OR
-     * @param array  $parameters
+     * @param array<int, mixed> $parameters
      *
      * @return $this
      */
-    protected function addWhereStatement($statement, string $separator = 'AND', $parameters = [])
+    protected function addWhereStatement(string|array|null $statement, string $separator = 'AND', array $parameters = []): self
     {
         if ($statement === null) {
             return $this->resetClause('WHERE');
@@ -183,11 +196,11 @@ abstract class Base implements IteratorAggregate
     /**
      * Remove all prev defined statements
      *
-     * @param $clause
+     * @param string $clause
      *
      * @return $this
      */
-    protected function resetClause($clause)
+    protected function resetClause(string $clause): self
     {
         $this->statements[$clause] = null;
         $this->parameters[$clause] = [];
@@ -201,24 +214,29 @@ abstract class Base implements IteratorAggregate
     /**
      * Implements method from IteratorAggregate
      *
-     * @return PDOStatement
+     * @return \Traversable<int, array<string, mixed>|object>
      *
      * @throws Exception
      */
     #[\ReturnTypeWillChange]
-    public function getIterator()
+    public function getIterator(): \Traversable
     {
-        return $this->execute();
+        $result = $this->execute();
+        if ($result instanceof \Traversable) {
+            /** @var \Traversable<int, array<string, mixed>|object> $result */
+            return $result;
+        }
+        return new \EmptyIterator();
     }
 
     /**
      * Execute query with earlier added parameters
      *
-     * @return PDOStatement
+     * @return PDOStatement|Result|bool|int|string|null
      *
      * @throws Exception
      */
-    public function execute(mixed $param = null): mixed
+    public function execute(mixed $param = null): PDOStatement|Result|bool|int|string|null
     {
         $startTime = microtime(true);
 
@@ -227,12 +245,12 @@ abstract class Base implements IteratorAggregate
 
         $this->prepareQuery($query);
 
-        if ($this->result !== false) {
+        if ($this->result instanceof PDOStatement) {
             $this->setObjectFetchMode($this->result);
 
             $execTime = microtime(true);
 
-            $this->executeQuery($parameters, $startTime, $execTime);
+            $this->executeQuery($parameters, (float) $startTime, (float) $execTime);
             $this->debug();
 
             // Clear state after execution to free memory
@@ -273,7 +291,7 @@ abstract class Base implements IteratorAggregate
     /**
      * Get query parameters
      *
-     * @return array
+     * @return array<int|string, mixed>
      */
     public function getParameters(): array
     {
@@ -285,7 +303,7 @@ abstract class Base implements IteratorAggregate
     }
 
     /**
-     * @return array
+     * @return array<string, mixed>
      */
     public function getRawClauses(): array
     {
@@ -293,7 +311,7 @@ abstract class Base implements IteratorAggregate
     }
 
     /**
-     * @return array
+     * @return array<string, mixed>
      */
     public function getRawStatements(): array
     {
@@ -301,7 +319,7 @@ abstract class Base implements IteratorAggregate
     }
 
     /**
-     * @return array
+     * @return array<string, mixed>|array<int|string, mixed>
      */
     public function getRawParameters(): array
     {
@@ -432,7 +450,7 @@ abstract class Base implements IteratorAggregate
     }
 
     /**
-     * @return array
+     * @return array<int|string, mixed>
      */
     protected function buildParameters(): array
     {
@@ -487,31 +505,17 @@ abstract class Base implements IteratorAggregate
     }
 
     /**
-     * @param $clause
+     * @param string $clause
      *
      * @return bool
      */
-    private function clauseNotEmpty($clause)
+    private function clauseNotEmpty(string $clause): bool
     {
         if ((Utilities::isCountable($this->statements[$clause])) && $this->clauses[$clause]) {
             return (bool)count($this->statements[$clause]);
         }
 
         return (bool)$this->statements[$clause];
-    }
-
-    /**
-     * @param \DateTime $val
-     *
-     * @return mixed
-     */
-    private function formatValue($val)
-    {
-        if ($val instanceof DateTime) {
-            return $val->format('Y-m-d H:i:s'); // may be driver specific
-        }
-
-        return $val;
     }
 
     /**
@@ -544,18 +548,18 @@ abstract class Base implements IteratorAggregate
     }
 
     /**
-     * @param array $parameters
-     * @param int   $startTime
-     * @param int   $execTime
+     * @param array<int|string, mixed> $parameters
+     * @param float $startTime
+     * @param float $execTime
      *
      * @throws Exception
      */
-    private function executeQuery($parameters, $startTime, $execTime): void
+    private function executeQuery(array $parameters, float $startTime, float $execTime): void
     {
-        if ($this->result->execute($parameters) === true) {
+        if ($this->result instanceof PDOStatement && $this->result->execute($parameters) === true) {
             $this->executionTime = microtime(true) - $execTime;
             $this->totalTime = microtime(true) - $startTime;
-        } else {
+        } elseif ($this->result instanceof PDOStatement) {
             $error = $this->result->errorInfo();
             $this->message = "SQLSTATE: {$error[0]} - Driver Code: {$error[1]} - Message: {$error[2]}";
 
@@ -591,7 +595,7 @@ abstract class Base implements IteratorAggregate
      *
      * @throws Exception
      */
-    private function debug()
+    private function debug(): void
     {
         if (!empty($this->fluent->debug)) {
             if (!is_callable($this->fluent->debug)) {
@@ -614,8 +618,10 @@ abstract class Base implements IteratorAggregate
                 }
 
                 $time = sprintf('%0.3f', $this->totalTime * 1000) . 'ms';
-                $rows = ($this->result) ? $this->result->rowCount() : 0;
-                $finalString = "# {$backtrace['file']}:{$backtrace['line']} ({$time}; rows = {$rows})\n{$debug}\n\n";
+                $rows = ($this->result instanceof PDOStatement) ? $this->result->rowCount() : 0;
+                $file = $backtrace['file'] ?? 'unknown';
+                $line = $backtrace['line'] ?? 0;
+                $finalString = "# {$file}:{$line} ({$time}; rows = {$rows})\n{$debug}\n\n";
 
                 // if STDERR is set, send there, otherwise just output the string
                 if (defined('STDERR') && is_resource(STDERR)) {

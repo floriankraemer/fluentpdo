@@ -21,10 +21,10 @@ class Select extends Common implements \Countable
     /**
      * SelectQuery constructor.
      *
-     * @param Query     $fluent
-     * @param           $from
+     * @param Query  $fluent
+     * @param string $from
      */
-    function __construct(Query $fluent, $from)
+    public function __construct(Query $fluent, string $from)
     {
         $clauses = [
             'SELECT'   => ', ',
@@ -42,8 +42,8 @@ class Select extends Common implements \Countable
 
         // initialize statements
         $fromParts = explode(' ', $from);
-        $this->fromTable = reset($fromParts);
-        $this->fromAlias = end($fromParts);
+        $this->fromTable = reset($fromParts) ?: '';
+        $this->fromAlias = end($fromParts) ?: $this->fromTable;
 
         $this->statements['FROM'] = $from;
         $this->statements['SELECT'][] = $this->fromAlias . '.*';
@@ -72,7 +72,7 @@ class Select extends Common implements \Countable
     /**
      * Return table name from FROM clause
      */
-    public function getFromTable()
+    public function getFromTable(): string
     {
         return $this->fromTable;
     }
@@ -80,7 +80,7 @@ class Select extends Common implements \Countable
     /**
      * Return table alias from FROM clause
      */
-    public function getFromAlias()
+    public function getFromAlias(): string
     {
         return $this->fromAlias;
     }
@@ -92,11 +92,12 @@ class Select extends Common implements \Countable
      *
      * @throws Exception
      *
-     * @return string
+     * @return int|string|false|null
      */
-    public function fetchColumn(int $columnNumber = 0): mixed
+    public function fetchColumn(int $columnNumber = 0): int|string|false|null
     {
-        if (($s = $this->execute()) !== false) {
+        $s = $this->execute();
+        if ($s instanceof Result || $s instanceof \PDOStatement) {
             return $s->fetchColumn($columnNumber);
         }
 
@@ -105,6 +106,8 @@ class Select extends Common implements \Countable
 
     /**
      * ! NEW: Fetch all as single-dimensional array (column values)
+     *
+     * @return array<int, int|string|null>
      */
     public function fetchColumnArray(int $columnNumber = 0): array
     {
@@ -113,8 +116,14 @@ class Select extends Common implements \Countable
         }
 
         $result = [];
-        while ($value = $this->result->fetchColumn($columnNumber)) {
-            $result[] = $value;
+        if ($this->result instanceof Result) {
+            while (($value = $this->result->fetchColumn($columnNumber)) !== false) {
+                $result[] = $value;
+            }
+        } elseif ($this->result instanceof \PDOStatement) {
+            while (($value = $this->result->fetchColumn($columnNumber)) !== false) {
+                $result[] = $value;
+            }
         }
 
         return $result;
@@ -123,33 +132,35 @@ class Select extends Common implements \Countable
     /**
      * Fetch first row or column
      *
-     * @param string $column - column name or empty string for the whole row
+     * @param string|null $column - column name or empty string for the whole row
      * @param int    $cursorOrientation
      *
      * @throws Exception
      *
      * @return mixed string, array or false if there is no row
      */
-    public function fetch(?string $column = null, int $cursorOrientation = \PDO::FETCH_ORI_NEXT)
+    public function fetch(?string $column = null, int $cursorOrientation = \PDO::FETCH_ORI_NEXT): mixed
     {
         if ($this->result === null) {
             $this->execute();
         }
 
-        if ($this->result === false) {
+        if ($this->result === false || $this->result === null) {
             return false;
         }
 
-        $row = $this->result->fetch($this->currentFetchMode, $cursorOrientation);
+        $stmt = $this->result instanceof Result ? $this->result->getStatement() : $this->result;
+        $row = $stmt->fetch($this->currentFetchMode, $cursorOrientation);
 
-        if ($this->fluent->convertRead === true) {
-            $row = Utilities::stringToNumeric($this->result, $row);
+        if ($this->fluent->convertRead === true && $row !== false) {
+            $row = Utilities::stringToNumeric($stmt, $row);
         }
 
         if ($row && $column !== null) {
             if (is_object($row)) {
                 return $row->{$column};
-            } else {
+            }
+            if (is_array($row)) {
                 return $row[$column];
             }
         }
@@ -160,21 +171,24 @@ class Select extends Common implements \Countable
     /**
      * Fetch pairs
      *
-     * @param $key
-     * @param $value
-     * @param $object
+     * @param string $key
+     * @param string $value
+     * @param bool $object
      *
      * @throws Exception
      *
-     * @return array|\PDOStatement
+     * @return array<int|string, mixed>|Result|\PDOStatement|false
      */
-    public function fetchPairs($key, $value, $object = false)
+    public function fetchPairs(string $key, string $value, bool $object = false): array|Result|\PDOStatement|false
     {
-        if (($s = $this->select("$key, $value", true)->asObject($object)->execute()) !== false) {
+        $s = $this->select("$key, $value", true)->asObject($object)->execute();
+        if ($s instanceof Result) {
             return $s->fetchAll(\PDO::FETCH_KEY_PAIR);
         }
-
-        return $s;
+        if ($s instanceof \PDOStatement) {
+            return $s->fetchAll(\PDO::FETCH_KEY_PAIR);
+        }
+        return false;
     }
 
     /** Fetch all row
@@ -184,9 +198,9 @@ class Select extends Common implements \Countable
      *
      * @throws Exception
      *
-     * @return array|bool -  fetched rows
+     * @return array<int|string, mixed>|false -  fetched rows
      */
-    public function fetchAll($index = '', $selectOnly = '')
+    public function fetchAll(string $index = '', string $selectOnly = ''): array|false
     {
         $indexAsArray = strpos($index, '[]');
 
@@ -200,17 +214,25 @@ class Select extends Common implements \Countable
 
         if ($index) {
             return $this->buildSelectData($index, $indexAsArray);
-        } else {
-            if (($result = $this->execute()) !== false) {
-                if ($this->fluent->convertRead === true) {
-                    return Utilities::stringToNumeric($result, $result->fetchAll());
-                } else {
-                    return $result->fetchAll();
-                }
-            }
-
-            return false;
         }
+        $result = $this->execute();
+        if ($result instanceof Result) {
+            $rows = $result->fetchAll();
+            if ($this->fluent->convertRead === true) {
+                $converted = Utilities::stringToNumeric($result->getStatement(), $rows);
+                return is_array($converted) ? $converted : iterator_to_array($converted);
+            }
+            return $rows;
+        }
+        if ($result instanceof \PDOStatement) {
+            $rows = $result->fetchAll(\PDO::FETCH_ASSOC);
+            if ($this->fluent->convertRead === true) {
+                $converted = Utilities::stringToNumeric($result, $rows);
+                return is_array($converted) ? $converted : iterator_to_array($converted);
+            }
+            return $rows;
+        }
+        return false;
     }
 
     /**
@@ -220,7 +242,6 @@ class Select extends Common implements \Countable
      *
      * @return int
      */
-    #[\ReturnTypeWillChange]
     /**
      * Add chunked fetch for large result sets
      * ! NEW METHOD
@@ -239,19 +260,28 @@ class Select extends Common implements \Countable
     /**
      * Fix count() to use SQL COUNT instead of clone + fetchAll
      * ! CHANGE: Use SELECT COUNT(*) instead of clone + fetchAll
+     *
+     * @return int<0, max>
      */
     public function count(): int
     {
         // Build COUNT(*) query
         $countQuery = clone $this;
         $countQuery->select('COUNT(*) as count', true);
-        $countQuery->limit(null);
-        $countQuery->offset(null);
+        $countQuery->resetClause('LIMIT');
+        $countQuery->resetClause('OFFSET');
 
         $result = $countQuery->execute();
-        $row = $result->fetch();
+        if (!$result instanceof Result) {
+            return 0;
+        }
+        // Use fetchColumn to get first column value (works regardless of column name)
+        $countVal = $result->fetchColumn(0);
+        if ($countVal === false || $countVal === null) {
+            return 0;
+        }
 
-        return (int) ($row['count'] ?? 0);
+        return max(0, (int) $countVal);
     }
 
     /**
@@ -270,32 +300,41 @@ class Select extends Common implements \Countable
         }
 
         // Fallback for PDOStatement
-        while ($row = $this->result->fetch($this->currentFetchMode)) {
-            yield $row;
+        if ($this->result instanceof \PDOStatement) {
+            while (($row = $this->result->fetch($this->currentFetchMode)) !== false) {
+                yield $row;
+            }
         }
     }
 
     /**
-     * @param $index
-     * @param $indexAsArray
+     * @param string $index
+     * @param bool|int $indexAsArray
      *
-     * @return array
+     * @return array<int|string, mixed>
      */
-    private function buildSelectData($index, $indexAsArray)
+    private function buildSelectData(string $index, bool|int $indexAsArray): array
     {
         $data = [];
 
         foreach ($this as $row) {
-            if (is_object($row)) {
-                $key = $row->{$index};
-            } else {
-                $key = $row[$index];
+            $key = null;
+            if (is_array($row)) {
+                $rowArr = $row;
+                $key = array_key_exists($index, $rowArr) ? $rowArr[$index] : null;
+            } elseif (is_object($row)) {
+                $key = $row->{$index} ?? null;
             }
 
-            if ($indexAsArray) {
-                $data[$key][] = $row;
-            } else {
-                $data[$key] = $row;
+            if ($key !== null) {
+                if ($indexAsArray) {
+                    if (!isset($data[$key]) || !is_array($data[$key])) {
+                        $data[$key] = [];
+                    }
+                    $data[$key][] = $row;
+                } else {
+                    $data[$key] = $row;
+                }
             }
         }
 

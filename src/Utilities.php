@@ -18,43 +18,47 @@ class Utilities
      *
      * @return string
      */
-    public static function toUpperWords($string)
+    public static function toUpperWords(string $string): string
     {
         $regex = new Regex();
-        return trim(strtoupper($regex->camelCaseSpaced($string)));
+        $spaced = $regex->camelCaseSpaced($string);
+        $result = is_array($spaced) ? implode('', $spaced) : (string) ($spaced ?? '');
+        return trim(strtoupper($result));
     }
 
     /**
-     * @param string $query
+     * @param string|\Stringable $query - SQL string or query object with __toString
      *
      * @return string
      */
-    public static function formatQuery($query)
+    public static function formatQuery(string|\Stringable $query): string
     {
         $regex = new Regex();
+        $queryStr = is_string($query) ? $query : $query->__toString();
 
-        $query = $regex->splitClauses($query);
-        $query = $regex->splitSubClauses($query);
-        $query = $regex->removeLineEndWhitespace($query);
-
-        return $query;
+        $queryStr = $regex->splitClauses($queryStr);
+        $queryStr = is_array($queryStr) ? implode('', $queryStr) : (string) ($queryStr ?? '');
+        $queryStr = $regex->splitSubClauses($queryStr);
+        $queryStr = is_array($queryStr) ? implode('', $queryStr) : (string) ($queryStr ?? '');
+        $queryStr = $regex->removeLineEndWhitespace($queryStr);
+        return is_array($queryStr) ? implode('', $queryStr) : (string) ($queryStr ?? '');
     }
 
     /**
      * Converts columns from strings to types according to PDOStatement::columnMeta()
      *
      * @param \PDOStatement|Result $statement
-     * @param array|\Traversable   $rows - provided by PDOStatement::fetch with PDO::FETCH_ASSOC
+     * @param array<string, mixed>|array<int, array<string, mixed>>|\Traversable<int, array<string, mixed>> $rows - provided by PDOStatement::fetch with PDO::FETCH_ASSOC
      *
-     * @return array|\Traversable
+     * @return array<string, mixed>|array<int, array<string, mixed>>|\Traversable<int, array<string, mixed>>
      */
-    public static function stringToNumeric(\PDOStatement|Result $statement, $rows)
+    public static function stringToNumeric(\PDOStatement|Result $statement, array|\Traversable $rows): array|\Traversable
     {
         // Get the underlying PDOStatement from Result if needed
         $pdoStatement = $statement instanceof Result ? $statement->getStatement() : $statement;
 
         for ($i = 0; ($columnMeta = $pdoStatement->getColumnMeta($i)) !== false; $i++) {
-            $type = $columnMeta['native_type'];
+            $type = $columnMeta['native_type'] ?? 'STRING';
 
             switch ($type) {
                 case 'DECIMAL':
@@ -66,17 +70,17 @@ class Utilities
                 case 'NEWDECIMAL':
                 case 'SHORT':
                 case 'TINY':
-                    if (isset($rows[$columnMeta['name']])) {
-                        $rows[$columnMeta['name']] = $rows[$columnMeta['name']] + 0;
-                    } else {
-                        if (is_array($rows) || $rows instanceof \Traversable) {
-                            foreach ($rows as &$row) {
-                                if (isset($row[$columnMeta['name']])) {
-                                    $row[$columnMeta['name']] = $row[$columnMeta['name']] + 0;
-                                }
+                    $colName = $columnMeta['name'];
+                    if (is_array($rows) && !isset($rows[0]) && isset($rows[$colName])) {
+                        $rows[$colName] = $rows[$colName] + 0;
+                    } elseif ($rows instanceof \Traversable) {
+                        foreach ($rows as &$row) {
+                            /** @var array<string, mixed> $row */
+                            if (isset($row[$colName])) {
+                                $row[$colName] = $row[$colName] + 0;
                             }
-                            unset($row);
                         }
+                        unset($row);
                     }
                     break;
                 default:
@@ -89,29 +93,27 @@ class Utilities
     }
 
     /**
-     * @param $value
+     * @param array<int|string, mixed>|mixed $value
      *
-     * @return bool
+     * @return array<int|string, mixed>|int|string|bool|float|null
      */
-    public static function convertSqlWriteValues($value)
+    public static function convertSqlWriteValues(mixed $value): array|int|string|bool|float|null
     {
         if (is_array($value)) {
             foreach ($value as $k => $v) {
                 $value[$k] = self::convertValue($v);
             }
-        } else {
-            $value = self::convertValue($value);
+            return $value;
         }
-
-        return $value;
+        return self::convertValue($value);
     }
 
     /**
-     * @param $value
+     * @param mixed $value
      *
      * @return int|string
      */
-    public static function convertValue($value)
+    public static function convertValue(mixed $value)
     {
         switch (gettype($value)) {
             case 'boolean':
@@ -126,21 +128,21 @@ class Utilities
     }
 
     /**
-     * @param $subject
+     * @param mixed $subject
      *
      * @return bool
      */
-    public static function isCountable($subject)
+    public static function isCountable(mixed $subject)
     {
         return (is_array($subject) || ($subject instanceof \Countable));
     }
 
     /**
-     * @param $value
+     * @param mixed $value
      *
      * @return Literal|mixed
      */
-    public static function nullToLiteral($value)
+    public static function nullToLiteral(mixed $value)
     {
         if ($value === null) {
             return new Literal('NULL');

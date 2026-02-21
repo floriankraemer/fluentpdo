@@ -93,9 +93,9 @@ class Regex
     /**
      * Match the first file outside of the Fluent source
      *
-     * @param string  $subject
-     * @param ?array  $matches
-     * @param ?string $directory
+     * @param string      $subject
+     * @param mixed       $matches
+     * @param string|null $directory
      *
      * @return false|int
      */
@@ -109,8 +109,9 @@ class Regex
     /**
      * Match the string "?" or ":param"
      *
-     * @param string     $subject
-     * @param array|null $matches
+     * @param string $subject
+     * @param mixed $matches
+     * @param-out array<int, string> $matches
      *
      * @return false|int
      */
@@ -122,10 +123,11 @@ class Regex
     /**
      * Match the UTF-8 string "table AS alias"
      *
-     * @param string     $subject
-     * @param array|null $matches
+     * @param string $subject
+     * @param mixed $matches
+     * @param-out array<int, string> $matches
      *
-     * @return false|int
+     * @return int|false
      */
     public function tableAlias(string $subject, &$matches = null): int|false
     {
@@ -149,8 +151,9 @@ class Regex
     /**
      * Match the UTF-8 string "table" or "table."
      *
-     * @param string     $subject
-     * @param array|null $matches
+     * @param string $subject
+     * @param mixed $matches
+     * @param-out array<int, array<int, string>> $matches
      *
      * @return false|int
      */
@@ -162,8 +165,9 @@ class Regex
     /**
      * Match the UTF-8 string "table." or "table.column"
      *
-     * @param string     $subject
-     * @param array|null $matches
+     * @param string $subject
+     * @param mixed $matches
+     * @param-out array<int, array<int, string>> $matches
      *
      * @return false|int
      */

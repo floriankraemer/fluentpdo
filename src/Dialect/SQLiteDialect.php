@@ -42,6 +42,9 @@ class SQLiteDialect extends AbstractDialect
         return true;
     }
 
+    /**
+     * @param array<string, mixed> $updates
+     */
     public function formatUpsert(array $updates): string
     {
         $sets = [];
@@ -61,7 +64,7 @@ class SQLiteDialect extends AbstractDialect
     {
         return match($feature) {
             'upsert' => true,
-            'json' => version_compare(SQLite3::version()['versionString'], '3.38.0', '>='),
+            'json' => version_compare(\SQLite3::version()['versionString'], '3.38.0', '>='),
             default => false
         };
     }

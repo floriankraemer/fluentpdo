@@ -51,6 +51,9 @@ abstract class AbstractDialect implements DialectInterface
         return false;
     }
 
+    /**
+     * @param array<string, mixed> $updates
+     */
     public function formatUpsert(array $updates): string
     {
         throw new \RuntimeException(

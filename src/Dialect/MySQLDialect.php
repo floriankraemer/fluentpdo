@@ -43,6 +43,9 @@ class MySQLDialect extends AbstractDialect
         return true;
     }
 
+    /**
+     * @param array<string, mixed> $updates
+     */
     public function formatUpsert(array $updates): string
     {
         $sets = [];

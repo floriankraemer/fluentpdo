@@ -36,6 +36,10 @@ update: ## Update PHP dependencies
 test: ## Run the test suite
 	docker-compose exec php vendor/bin/phpunit
 
+# * Testing
+phpstan: ## Run PHPStan static analysis
+	docker-compose exec php vendor/bin/phpstan analyse
+
 # * Benchmarking
 bench: ## Run PHPBench benchmarks
 	docker-compose exec php vendor/bin/phpbench run --bootstrap=benchmarks/bootstrap.php benchmarks/

@@ -34,6 +34,8 @@ interface DialectInterface
 
     /**
      * Format UPSERT clause
+     *
+     * @param array<string, mixed> $updates
      */
     public function formatUpsert(array $updates): string;
 

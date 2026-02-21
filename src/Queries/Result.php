@@ -11,18 +11,28 @@ use Countable;
 
 /**
  * Result wrapper that provides memory-efficient iteration
+ *
+ * @implements Iterator<int, array<string, mixed>|object|null>
  */
 class Result implements Iterator, Countable
 {
     private int $position = 0;
-    private ?array $currentRow = null;
+
+    /** @var array<string, mixed>|object|null */
+    private $currentRow = null;
     private ?int $cachedCount = null;
 
     public function __construct(
         private readonly PDOStatement $statement,
         private readonly int $fetchMode = PDO::FETCH_ASSOC,
         private readonly bool $convertTypes = false
-    ) {}
+    ) {
+    }
+
+    public function isConvertTypes(): bool
+    {
+        return $this->convertTypes;
+    }
 
     /**
      * Get the underlying PDOStatement
@@ -42,6 +52,8 @@ class Result implements Iterator, Countable
 
     /**
      * Fetch all rows (use with caution - loads into memory)
+     *
+     * @return array<int, array<string, mixed>>
      */
     public function fetchAll(?int $fetchMode = null): array
     {
@@ -107,11 +119,16 @@ class Result implements Iterator, Countable
     }
 
     // Countable implementation
+    /**
+     * @return int<0, max>
+     */
     public function count(): int
     {
         if ($this->cachedCount === null) {
-            $this->cachedCount = $this->statement->rowCount();
+            $count = $this->statement->rowCount();
+            $this->cachedCount = $count < 0 ? 0 : $count;
         }
+        /** @var int<0, max> */
         return $this->cachedCount;
     }
 

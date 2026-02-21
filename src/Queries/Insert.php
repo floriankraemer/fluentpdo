@@ -11,10 +11,10 @@ use Envms\FluentPDO\{Exception, Literal, Query};
 class Insert extends Base
 {
 
-    /** @var array */
+    /** @var array<int, string> */
     private $columns = [];
 
-    /** @var array */
+    /** @var array<int|string, mixed> */
     private $firstValue = [];
 
     /** @var bool */
@@ -25,13 +25,13 @@ class Insert extends Base
     /**
      * InsertQuery constructor.
      *
-     * @param Query     $fluent
-     * @param string    $table
-     * @param           $values
+     * @param Query  $fluent
+     * @param string $table
+     * @param array<int|string, mixed> $values
      *
      * @throws Exception
      */
-    public function __construct(Query $fluent, $table, $values)
+    public function __construct(Query $fluent, string $table, array $values)
     {
         $clauses = [
             'INSERT INTO'             => [$this, 'getClauseInsertInto'],
@@ -70,19 +70,16 @@ class Insert extends Base
     /**
      * Add VALUES
      *
-     * @param $values
+     * @param array<int|string, mixed> $values
      *
      * @return Insert
      * @throws Exception
      */
-    public function values($values)
+    public function values(array $values): self
     {
-        if (!is_array($values)) {
-            throw new Exception('Param VALUES for INSERT query must be array');
-        }
-
         $first = current($values);
-        if (is_string(key($values))) {
+        $firstKey = key($values);
+        if (is_string($firstKey)) {
             // is one row array
             $this->addOneValue($values);
         } elseif (is_array($first) && is_string(key($first))) {
@@ -98,11 +95,11 @@ class Insert extends Base
     /**
      * Add ON DUPLICATE KEY UPDATE
      *
-     * @param array $values
+     * @param array<string, mixed> $values
      *
      * @return Insert
      */
-    public function onDuplicateKeyUpdate($values)
+    public function onDuplicateKeyUpdate(array $values): self
     {
         $this->statements['ON DUPLICATE KEY UPDATE'] = array_merge(
             $this->statements['ON DUPLICATE KEY UPDATE'], $values
@@ -114,18 +111,19 @@ class Insert extends Base
     /**
      * Execute insert query
      *
-     * @param mixed $sequence
+     * @param string|null $sequence
      *
      * @throws Exception
      *
-     * @return int|bool - Last inserted primary key
+     * @return int|string|false - Last inserted primary key (string for large integers)
      */
-    public function execute(mixed $sequence = null): mixed
+    public function execute(mixed $sequence = null): int|string|false
     {
         $result = parent::execute();
 
-        if ($result) {
-            return $this->fluent->getPdo()->lastInsertId($sequence);
+        if ($result instanceof \PDOStatement || $result instanceof Result) {
+            $lastId = $this->fluent->getPdo()->lastInsertId($sequence);
+            return $lastId;
         }
 
         return false;
@@ -192,11 +190,11 @@ class Insert extends Base
     }
 
     /**
-     * @param $param
+     * @param mixed $param
      *
      * @return string
      */
-    protected function parameterGetValue($param)
+    protected function parameterGetValue(mixed $param): string
     {
         return $param instanceof Literal ? (string)$param : '?';
     }
@@ -205,11 +203,11 @@ class Insert extends Base
      * Removes all Literal instances from the argument
      * since they are not to be used as PDO parameters but rather injected directly into the query
      *
-     * @param $statements
+     * @param array<int|string, mixed> $statements
      *
-     * @return array
+     * @return array<int|string, mixed>
      */
-    protected function filterLiterals($statements)
+    protected function filterLiterals(array $statements): array
     {
         $f = function ($item) {
             return !$item instanceof Literal;
@@ -225,7 +223,7 @@ class Insert extends Base
     }
 
     /**
-     * @return array
+     * @return array<int|string, mixed>
      */
     protected function buildParameters(): array
     {
@@ -238,11 +236,11 @@ class Insert extends Base
     }
 
     /**
-     * @param array $oneValue
+     * @param array<int|string, mixed> $oneValue
      *
      * @throws Exception
      */
-    private function addOneValue($oneValue)
+    private function addOneValue(array $oneValue): void
     {
         // check if all $keys are strings
         foreach ($oneValue as $key => $value) {
@@ -254,7 +252,7 @@ class Insert extends Base
             $this->firstValue = $oneValue;
         }
         if (!$this->columns) {
-            $this->columns = array_keys($oneValue);
+            $this->columns = array_values(array_map('strval', array_keys($oneValue)));
         }
         if ($this->columns != array_keys($oneValue)) {
             throw new Exception('INSERT query: All VALUES have to same keys (columns).');

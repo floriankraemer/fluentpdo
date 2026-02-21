@@ -20,10 +20,12 @@ use Envms\FluentPDO\{Exception, Query};
 class Delete extends Common
 {
 
-    private $ignore = false;
+    private bool $ignore = false;
 
     /**
      * ! CHANGE: Support composite primary keys
+     *
+     * @param array<int|string, mixed>|null $primaryKey
      */
     public function __construct(Query $fluent, string $table, int|array|null $primaryKey = null)
     {
@@ -101,16 +103,16 @@ class Delete extends Common
      *
      * @throws Exception
      *
-     * @return mixed
+     * @return int|false
      */
-    public function execute(mixed $param = null): mixed
+    public function execute(mixed $param = null): int|false
     {
         if (empty($this->statements['WHERE'])) {
             throw new Exception('Delete queries must contain a WHERE clause to prevent unwanted data loss');
         }
 
         $result = parent::execute();
-        if ($result) {
+        if ($result instanceof Result || $result instanceof \PDOStatement) {
             return $result->rowCount();
         }
 

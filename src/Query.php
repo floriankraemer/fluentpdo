@@ -25,8 +25,8 @@ use Envms\FluentPDO\Queries\{Insert, Select, Update, Delete};
  */
 class Query
 {
-    /** @var PDO */
-    protected readonly PDO $pdo;
+    /** @var PDO|null */
+    protected ?PDO $pdo;
     /** @var Structure */
     protected readonly Structure $structure;
 
@@ -94,7 +94,8 @@ class Query
             $tableTable = $query->getFromTable();
             $tableAlias = $query->getFromAlias();
             $primaryKeyName = $this->structure->getPrimaryKey($tableTable);
-            $query = $query->where("$tableAlias.$primaryKeyName", $primaryKey);
+            $pkStr = is_array($primaryKeyName) ? implode(', ', $primaryKeyName) : $primaryKeyName;
+            $query = $query->where("$tableAlias.$pkStr", $primaryKey);
         }
 
         return $query;
@@ -109,6 +110,9 @@ class Query
      * @return Insert
      *
      * @throws Exception
+     */
+    /**
+     * @param array<int|string, mixed> $values
      */
     public function insertInto(?string $table = null, array $values = []): Insert
     {
@@ -129,7 +133,10 @@ class Query
      *
      * @throws Exception
      */
-    public function update(?string $table = null, $set = [], ?int $primaryKey = null): Update
+    /**
+     * @param array<string, mixed>|string $set
+     */
+    public function update(?string $table = null, array|string $set = [], ?int $primaryKey = null): Update
     {
         $this->setTableName($table);
         $table = $this->getFullTableName();
@@ -139,7 +146,8 @@ class Query
         $query->set($set);
         if ($primaryKey) {
             $primaryKeyName = $this->getStructure()->getPrimaryKey($this->table);
-            $query = $query->where($primaryKeyName, $primaryKey);
+            $pkStr = is_array($primaryKeyName) ? implode(', ', $primaryKeyName) : $primaryKeyName;
+            $query = $query->where($pkStr, $primaryKey);
         }
 
         return $query;
@@ -154,6 +162,9 @@ class Query
      * @return Delete
      *
      * @throws Exception
+     */
+    /**
+     * @param array<int|string, mixed>|null $primaryKey
      */
     public function delete(?string $table = null, int|array|null $primaryKey = null): Delete
     {
@@ -180,9 +191,13 @@ class Query
 
     /**
      * @return PDO
+     * @throws Exception if connection was closed
      */
     public function getPdo(): PDO
     {
+        if ($this->pdo === null) {
+            throw new Exception('Database connection has been closed');
+        }
         return $this->pdo;
     }
 
@@ -195,7 +210,8 @@ class Query
     }
 
     /**
-     * Closes the \PDO connection to the database
+     * Closes the \PDO connection to the database.
+     * Sets the internal PDO reference to null. getPdo() will throw if called after close().
      */
     public function close(): void
     {

@@ -46,14 +46,14 @@ class Update extends Common
     /**
      * In Update's case, parameters are not assigned until the query is built, since this method
      *
-     * @param string|array $fieldOrArray
-     * @param bool|string  $value
+     * @param string|array<string, mixed> $fieldOrArray
+     * @param mixed $value
      *
      * @throws Exception
      *
      * @return $this
      */
-    public function set($fieldOrArray, $value = false)
+    public function set(string|array $fieldOrArray, mixed $value = false): self
     {
         if (!$fieldOrArray) {
             return $this;
@@ -80,9 +80,9 @@ class Update extends Common
      *
      * @throws Exception
      *
-     * @return int|boolean|\PDOStatement
+     * @return int|bool|Result|\PDOStatement|string|null
      */
-    public function execute(mixed $getResultAsPdoStatement = false): mixed
+    public function execute(mixed $getResultAsPdoStatement = false): int|bool|Result|\PDOStatement|string|null
     {
         if (empty($this->statements['WHERE'])) {
             throw new Exception('Update queries must contain a WHERE clause to prevent unwanted data loss');
@@ -94,7 +94,7 @@ class Update extends Common
             return $result;
         }
 
-        if ($result) {
+        if ($result instanceof Result || $result instanceof \PDOStatement) {
             return $result->rowCount();
         }
 
@@ -117,12 +117,16 @@ class Update extends Common
         $setArray = [];
         foreach ($this->statements['SET'] as $field => $value) {
             // named params are being used here
-            if (is_array($value) && strpos(key($value), ':') === 0) {
-                $key = key($value);
-                $setArray[] = $field . ' = ' . $key;
-                $this->parameters['SET'][$key] = $value[$key];
-            }
-            elseif ($value instanceof Literal) {
+            if (is_array($value)) {
+                $firstKey = key($value);
+                if (is_string($firstKey) && strpos($firstKey, ':') === 0) {
+                    $setArray[] = $field . ' = ' . $firstKey;
+                    $this->parameters['SET'][$firstKey] = $value[$firstKey];
+                } else {
+                    $setArray[] = $field . ' = ?';
+                    $this->parameters['SET'][$field] = $value;
+                }
+            } elseif ($value instanceof Literal) {
                 $setArray[] = $field . ' = ' . $value;
             } else {
                 $setArray[] = $field . ' = ?';

@@ -10,16 +10,19 @@ namespace Envms\FluentPDO;
 class Structure
 {
 
-    /** @var string|array */
+    /** @var string|array<int, string> */
     private $primaryKey;
-    /** @var string */
+    /** @var string|array<int, string>|callable */
     private $foreignKey;
 
-    /** @var array */
+    /** @var array<string, array<int, string>> */
     private array $primaryKeys = [];
 
     /**
      * Structure constructor
+     *
+     * @param string|array<int, string>       $primaryKey
+     * @param string|array<int, string>|callable|null $foreignKey
      */
     public function __construct(
         string|array $primaryKey = 'id',
@@ -31,6 +34,8 @@ class Structure
 
     /**
      * ! CHANGE: Support array return for composite keys
+     *
+     * @return string|array<int, string>
      */
     public function getPrimaryKey(string $table): string|array
     {
@@ -49,6 +54,8 @@ class Structure
 
     /**
      * ! NEW: Set composite primary key
+     *
+     * @param array<int, string> $columns
      */
     public function setCompositePrimaryKey(string $table, array $columns): self
     {
@@ -76,15 +83,19 @@ class Structure
     }
 
     /**
-     * @param string|callback $key
-     * @param string          $table
+     * @param string|array<int, string>|callable $key
+     * @param string                            $table
      *
      * @return string
      */
-    private function key($key, $table)
+    private function key(string|array|callable $key, string $table): string
     {
         if (is_callable($key)) {
             return $key($table);
+        }
+
+        if (is_array($key)) {
+            return implode(', ', $key);
         }
 
         return sprintf($key, $table);

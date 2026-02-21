@@ -28,7 +28,7 @@ use Envms\FluentPDO\{Exception, Literal, Utilities};
 abstract class Common extends Base
 {
 
-    /** @var array - methods which are allowed to be called by the magic method __call() */
+    /** @var array<int, string> - methods which are allowed to be called by the magic method __call() */
     private $validMethods = [
         'comment',
         'from',
@@ -47,7 +47,7 @@ abstract class Common extends Base
         'rightJoin'
     ];
 
-    /** @var array - Query tables (also include table from clause FROM) */
+    /** @var array<int, string> - Query tables (also include table from clause FROM) */
     protected $joins = [];
 
     /** @var bool - Disable adding undefined joins to query? */
@@ -55,11 +55,11 @@ abstract class Common extends Base
 
     /**
      * @param string $name
-     * @param array  $parameters - first is $statement followed by $parameters
+     * @param array<int, mixed> $parameters - first is $statement followed by $parameters
      *
      * @return $this
      */
-    public function __call($name, $parameters = [])
+    public function __call(string $name, array $parameters = [])
     {
         if (!in_array($name, $this->validMethods)) {
             trigger_error("Call to invalid method " . get_class($this) . "::{$name}()", E_USER_ERROR);
@@ -115,13 +115,13 @@ abstract class Common extends Base
     /**
      * Add where condition, defaults to appending with AND
      *
-     * @param string|array $condition  - possibly containing ? or :name (PDO syntax)
+     * @param string|array<string, mixed>|null $condition  - possibly containing ? or :name (PDO syntax)
      * @param mixed        $parameters
      * @param string       $separator - should be AND or OR
      *
      * @return $this
      */
-    public function where($condition, $parameters = [], $separator = 'AND')
+    public function where(string|array|null $condition, mixed $parameters = [], string $separator = 'AND')
     {
         if ($condition === null) {
             return $this->resetClause('WHERE');
@@ -164,9 +164,6 @@ abstract class Common extends Base
                 $in = $this->quote($args[1]);
 
                 return $this->addWhereStatement("$condition IN $in", $separator);
-                $in = $this->quote($args[1]);
-
-                return $this->addWhereStatement("$condition IN $in", $separator);
             }
 
             // don't parameterize the value if it's an instance of Literal
@@ -182,7 +179,7 @@ abstract class Common extends Base
         $args = [0 => $args[1]];
 
         // parameters can be passed as [1, 2, 3] and it will fill a condition like: id IN (?, ?, ?)
-        if (is_array($parameters) && !empty($parameters)) {
+        if (is_array($parameters)) {
             $args = $parameters;
         }
 
@@ -240,13 +237,13 @@ abstract class Common extends Base
     /**
      * Statement can contain more tables (e.g. "table1.table2:table3:")
      *
-     * @param       $clause
-     * @param       $statement
-     * @param array $parameters
+     * @param string       $clause
+     * @param string|null  $statement
+     * @param array<int, mixed> $parameters
      *
      * @return $this
      */
-    private function addJoinStatements($clause, $statement, $parameters = [])
+    private function addJoinStatements(string $clause, ?string $statement, array $parameters = [])
     {
         if ($statement === null) {
             $this->joins = [];
@@ -274,7 +271,11 @@ abstract class Common extends Base
         $this->regex->tableJoin($joinTable, $matches);
 
         // used for applying the table alias
+        if (empty($matches[1])) {
+            return $this;
+        }
         $lastItem = array_pop($matches[1]);
+        assert($lastItem !== false);
         array_push($matches[1], $lastItem);
 
         foreach ($matches[1] as $joinItem) {
@@ -292,14 +293,14 @@ abstract class Common extends Base
     /**
      * Create join string
      *
-     * @param        $clause
-     * @param        $mainTable
-     * @param        $joinTable
+     * @param string $clause
+     * @param string $mainTable
+     * @param string $joinTable
      * @param string $joinAlias
      *
      * @return string
      */
-    private function createJoinStatement($clause, $mainTable, $joinTable, $joinAlias = '')
+    private function createJoinStatement(string $clause, string $mainTable, string $joinTable, string $joinAlias = '')
     {
         if (in_array(substr($mainTable, -1), [':', '.'])) {
             $mainTable = substr($mainTable, 0, -1);
@@ -324,24 +325,26 @@ abstract class Common extends Base
         if ($referenceDirection == ':') { // back reference
             $primaryKey = $this->getStructure()->getPrimaryKey($mainTable);
             $foreignKey = $this->getStructure()->getForeignKey($mainTable);
+            $pkStr = is_array($primaryKey) ? implode(', ', $primaryKey) : $primaryKey;
 
-            return " $clause $joinTable$asJoinAlias ON $joinAlias.$foreignKey = $mainTable.$primaryKey";
+            return " $clause $joinTable$asJoinAlias ON $joinAlias.$foreignKey = $mainTable.$pkStr";
         } else {
             $primaryKey = $this->getStructure()->getPrimaryKey($joinTable);
             $foreignKey = $this->getStructure()->getForeignKey($joinTable);
+            $pkStr = is_array($primaryKey) ? implode(', ', $primaryKey) : $primaryKey;
 
-            return " $clause $joinTable$asJoinAlias ON $joinAlias.$primaryKey = $mainTable.$foreignKey";
+            return " $clause $joinTable$asJoinAlias ON $joinAlias.$pkStr = $mainTable.$foreignKey";
         }
     }
 
     /**
      * Create undefined joins from statement with column with referenced tables
      *
-     * @param string $statement
+     * @param string|array{0: string, 1: string} $statement
      *
-     * @return string - the rewritten $statement (e.g. tab1.tab2:col => tab2.col)
+     * @return string|array{0: string, 1: string} - the rewritten $statement (e.g. tab1.tab2:col => tab2.col)
      */
-    private function createUndefinedJoins($statement)
+    private function createUndefinedJoins(string|array $statement): string|array
     {
         if ($this->isEscapedJoin($statement)) {
             return $statement;
@@ -353,6 +356,8 @@ abstract class Common extends Base
             $separator = $statement[0];
             $statement = $statement[1];
         }
+
+        assert(is_string($statement));
 
         // matches a table name made of any printable characters followed by a dot/colon,
         // followed by any letters, numbers and most punctuation (to exclude '*')
@@ -370,18 +375,18 @@ abstract class Common extends Base
             if (strpos($join, '.') !== false && strpos($statement, $join) === 0) {
                 // rebuild the where statement
                 if ($separator !== null) {
-                    $statement = [$separator, $statement];
+                    return [$separator, $statement];
                 }
-                
                 return $statement;
             }
         }
 
         $statement = $this->regex->removeAdditionalJoins($statement);
+        $statement = is_array($statement) ? implode('', $statement) : (string) $statement;
 
         // rebuild the where statement
         if ($separator !== null) {
-            $statement = [$separator, $statement];
+            return [$separator, $statement];
         }
 
         return $statement;
@@ -407,11 +412,11 @@ abstract class Common extends Base
     }
 
     /**
-     * @param $statement
+     * @param string|array{0: string, 1: string} $statement
      *
      * @return bool
      */
-    protected function isEscapedJoin($statement)
+    protected function isEscapedJoin(string|array $statement): bool
     {
         if (is_array($statement)) {
             $statement = $statement[1];
@@ -421,11 +426,11 @@ abstract class Common extends Base
     }
 
     /**
-     * @param $statement
+     * @param string $statement
      *
-     * @return array
+     * @return array{0: string, 1: string}
      */
-    private function setJoinNameAlias($statement)
+    private function setJoinNameAlias(string $statement): array
     {
         $this->regex->tableAlias($statement, $matches); // store any found alias in $matches
         $joinAlias = '';
@@ -442,26 +447,26 @@ abstract class Common extends Base
     }
 
     /**
-     * @param $table
-     * @param $joinItem
+     * @param string $table
+     * @param string $joinItem
      *
      * @return bool
      */
-    private function matchTableWithJoin($table, $joinItem)
+    private function matchTableWithJoin(string $table, string $joinItem): bool
     {
         return $table == substr($joinItem, 0, -1);
     }
 
     /**
-     * @param $clause
-     * @param $statement
-     * @param $parameters
-     * @param $joinAlias
-     * @param $joinTable
+     * @param string $clause
+     * @param string $statement
+     * @param array<int, mixed> $parameters
+     * @param string $joinAlias
+     * @param string $joinTable
      *
      * @return $this
      */
-    private function addRawJoins($clause, $statement, $parameters, $joinAlias, $joinTable)
+    private function addRawJoins(string $clause, string $statement, array $parameters, string $joinAlias, string $joinTable)
     {
         if (!$joinAlias) {
             $joinAlias = $joinTable;
@@ -492,16 +497,16 @@ abstract class Common extends Base
     }
 
     /**
-     * @param $clause
-     * @param $parameters
-     * @param $mainTable
-     * @param $joinItem
-     * @param $lastItem
-     * @param $joinAlias
+     * @param string $clause
+     * @param array<int, mixed> $parameters
+     * @param string $mainTable
+     * @param string $joinItem
+     * @param string $lastItem
+     * @param string $joinAlias
      *
-     * @return mixed
+     * @return string
      */
-    private function applyTableJoin($clause, $parameters, $mainTable, $joinItem, $lastItem, $joinAlias)
+    private function applyTableJoin(string $clause, array $parameters, string $mainTable, string $joinItem, string $lastItem, string $joinAlias): string
     {
         $alias = '';
 
