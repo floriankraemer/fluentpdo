@@ -30,6 +30,11 @@ This version is still maintained for compatibility but no new features will be a
 The legacy release of FluentPDO. It is no longer supported and will not be maintained or updated.
 This version works with PHP 5.4 to 7.1.
 
+## Documentation
+
+- [Query Examples](docs/query-examples.md) — INSERT, DELETE, SELECT, and JOIN examples
+- [Upgrading to 3.0](docs/UPGRADE-3.0.md) — Migration guide from 2.x
+
 ## Reference
 
 [Sitepoint - Getting Started with FluentPDO](http://www.sitepoint.com/getting-started-fluentpdo/)
