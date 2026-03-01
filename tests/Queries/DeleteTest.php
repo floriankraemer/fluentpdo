@@ -39,6 +39,10 @@ class DeleteTest extends TestCase
 
     public function testDeleteIgnore()
     {
+        if (getenv('DB_DRIVER') !== 'mysql') {
+            $this->markTestSkipped('DELETE IGNORE is only supported by MySQL');
+        }
+
         $query = $this->fluent->deleteFrom('user')
             ->ignore()
             ->where('id', 1);

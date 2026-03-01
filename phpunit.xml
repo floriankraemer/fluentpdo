@@ -17,10 +17,6 @@
         </include>
     </source>
     <php>
-        <env name="DB_DRIVER" value="mysql"/>
-        <env name="DB_HOST" value="mysql"/>
-        <env name="DB_NAME" value="fluentdb"/>
-        <env name="DB_USER" value="vagrant"/>
-        <env name="DB_PASS" value="vagrant"/>
+        <!-- DB environment variables are set by CI or defaults in init.php -->
     </php>
 </phpunit>

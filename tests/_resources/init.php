@@ -26,6 +26,10 @@ $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
 // Load test schema based on driver
 if ($driver === 'mysql') {
     $pdo->exec(file_get_contents(__DIR__ . '/fluentdb.sql'));
+} elseif ($driver === 'pgsql') {
+    $pdo->exec(file_get_contents(__DIR__ . '/fluentdb_pgsql.sql'));
+} elseif ($driver === 'sqlite') {
+    $pdo->exec(file_get_contents(__DIR__ . '/fluentdb_sqlite.sql'));
 }
 
 // Make $pdo available globally for tests

@@ -29,13 +29,18 @@ class ReplaceTest extends TestCase
 
     public function testReplaceStatement()
     {
+        if (getenv('DB_DRIVER') === 'pgsql') {
+            $this->markTestSkipped('REPLACE INTO / INSERT OR REPLACE is not supported by PostgreSQL');
+        }
+
         $query = $this->fluent->replaceInto('article', [
             'user_id' => 1,
             'title'   => 'new title',
             'content' => 'new content'
         ]);
 
-        self::assertEquals('REPLACE INTO article (user_id, title, content) VALUES (?, ?, ?)', $query->getQuery(false));
+        $expectedSql = getenv('DB_DRIVER') === 'sqlite' ? 'INSERT OR REPLACE INTO article (user_id, title, content) VALUES (?, ?, ?)' : 'REPLACE INTO article (user_id, title, content) VALUES (?, ?, ?)';
+        self::assertEquals($expectedSql, $query->getQuery(false));
         self::assertEquals(['0' => '1', '1' => 'new title', '2' => 'new content'], $query->getParameters());
     }
 

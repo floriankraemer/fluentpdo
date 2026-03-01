@@ -42,6 +42,10 @@ class InsertTest extends TestCase
 
     public function testInsertUpdate()
     {
+        if (getenv('DB_DRIVER') !== 'mysql') {
+            $this->markTestSkipped('ON DUPLICATE KEY UPDATE is only supported by MySQL');
+        }
+
         $query = $this->fluent->insertInto('article', ['id' => 1])
             ->onDuplicateKeyUpdate([
                 'published_at' => '2011-12-10 12:10:00',
@@ -86,6 +90,10 @@ class InsertTest extends TestCase
 
     public function testInsertIgnore()
     {
+        if (getenv('DB_DRIVER') !== 'mysql') {
+            $this->markTestSkipped('INSERT IGNORE is only supported by MySQL');
+        }
+
         $query = $this->fluent->insertInto('article',
             [
                 'user_id' => 1,
