@@ -29,5 +29,12 @@
 		"phpstan/phpstan": "^2.0",
 		"friendsofphp/php-cs-fixer": "^3.0",
 		"phpbench/phpbench": "^1.2"
+	},
+	"conflict": {
+		"symfony/console": ">=8.0",
+		"symfony/filesystem": ">=8.0",
+		"symfony/finder": ">=8.0",
+		"symfony/process": ">=8.0",
+		"symfony/string": ">=8.0"
 	}
 }
