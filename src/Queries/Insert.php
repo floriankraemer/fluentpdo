@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Envms\FluentPDO\Queries;
 
-use Envms\FluentPDO\{Exception, Literal, Query};
+use Envms\FluentPDO\{Exception, Literal, Query, Queries\Select};
 
 /** INSERT query builder
  */
@@ -22,6 +22,9 @@ class Insert extends Base
     /** @var bool */
     private $delayed = false;
 
+    /** @var Select|null */
+    private $selectQuery = null;
+
     /**
      * InsertQuery constructor.
      *
@@ -37,6 +40,7 @@ class Insert extends Base
             'INSERT INTO'             => [$this, 'getClauseInsertInto'],
             'VALUES'                  => [$this, 'getClauseValues'],
             'ON DUPLICATE KEY UPDATE' => [$this, 'getClauseOnDuplicateKeyUpdate'],
+            'RETURNING'               => ', ',
         ];
         parent::__construct($fluent, $clauses);
 
@@ -70,13 +74,26 @@ class Insert extends Base
     /**
      * Add VALUES
      *
-     * @param array<int|string, mixed> $values
+     * @param array<int|string, mixed>|Select $values - array of values or Select query for INSERT SELECT
+     * @param array<int, string> $columns - target column names for INSERT SELECT (optional)
      *
      * @return Insert
      * @throws Exception
      */
-    public function values(array $values): self
+    public function values(array|Select $values, array $columns = []): self
     {
+        // Handle INSERT SELECT
+        if ($values instanceof Select) {
+            $this->selectQuery = $values;
+            if (!empty($columns)) {
+                $this->columns = $columns;
+            }
+            // Ensure clauseNotEmpty includes VALUES when building query
+            $this->statements['VALUES'] = [['__insert_select__' => 1]];
+            return $this;
+        }
+
+        // Handle regular VALUES arrays
         $first = current($values);
         $firstKey = key($values);
 
@@ -155,8 +172,19 @@ class Insert extends Base
      */
     protected function getClauseValues()
     {
+        // Handle INSERT SELECT
+        if ($this->selectQuery !== null) {
+            $columns = implode(', ', $this->columns);
+            $selectSql = $this->selectQuery->getQuery(false);
+            return " ($columns) $selectSql";
+        }
+
+        // Handle regular VALUES
         $valuesArray = [];
         foreach ($this->statements['VALUES'] as $rows) {
+            if (isset($rows['__insert_select__'])) {
+                continue; // Skip placeholder from INSERT SELECT
+            }
             // literals should not be parametrized.
             // They are commonly used to call engine functions or literals.
             // Eg: NOW(), CURRENT_TIMESTAMP etc
@@ -217,10 +245,23 @@ class Insert extends Base
      */
     protected function buildParameters(): array
     {
-        $this->parameters = array_merge(
-            $this->filterLiterals($this->statements['VALUES']),
+        $parameters = [];
+
+        // Handle INSERT SELECT parameters
+        if ($this->selectQuery !== null) {
+            $parameters = $this->selectQuery->getParameters();
+        } else {
+            // Handle regular VALUES parameters
+            $parameters = $this->filterLiterals($this->statements['VALUES']);
+        }
+
+        // Merge with ON DUPLICATE KEY UPDATE parameters
+        $parameters = array_merge(
+            $parameters,
             $this->filterLiterals($this->statements['ON DUPLICATE KEY UPDATE'])
         );
+
+        $this->parameters = $parameters;
 
         return parent::buildParameters();
     }
@@ -252,6 +293,25 @@ class Insert extends Base
         }
 
         $this->statements['VALUES'][] = $oneValue;
+    }
+
+    /**
+     * Add RETURNING clause (PostgreSQL)
+     *
+     * @param string|array<string> $columns
+     *
+     * @return Insert
+     */
+    public function returning(string|array $columns): self
+    {
+        if (!$this->dialect->supportsFeature('returning')) {
+            throw new Exception('RETURNING clause is not supported by this database dialect');
+        }
+
+        $columns = is_array($columns) ? $columns : [$columns];
+        $this->statements['RETURNING'] = $columns;
+
+        return $this;
     }
 
 }

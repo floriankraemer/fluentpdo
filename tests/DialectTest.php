@@ -37,5 +37,23 @@ class DialectTest extends TestCase
         ];
     }
 
+    #[Test]
+    public function testQuoteValueFallsBackWhenPdoQuoteReturnsFalse(): void
+    {
+        $pdo = $this->createMock(\PDO::class);
+        $pdo->method('quote')
+            ->willReturn(false);
+
+        $dialect = new SQLServerDialect($pdo);
+
+        // SQL Server dialect uses manualEscape which replaces ' with ''
+        $this->assertEquals("'don''t'", $dialect->quoteValue("don't"));
+        $this->assertEquals("NULL", $dialect->quoteValue(null)); // null is handled before PDO::quote
+        $this->assertEquals("1", $dialect->quoteValue(true)); // bool is handled before PDO::quote
+        $this->assertEquals("0", $dialect->quoteValue(false)); // bool is handled before PDO::quote
+        $this->assertEquals("42", $dialect->quoteValue(42)); // int is handled before PDO::quote
+        $this->assertEquals("3.14", $dialect->quoteValue(3.14)); // float is handled before PDO::quote
+    }
+
     // Add more dialect-specific tests...
 }

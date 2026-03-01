@@ -151,4 +151,16 @@ class UpdateTest extends TestCase
         self::assertEquals([':active' => '1', ':country' => 'Slovakia'], $query->getParameters());
     }
 
+    public function testUpdateReturning()
+    {
+        // Test that RETURNING throws exception for unsupported dialects
+        $query = $this->fluent->update('user')
+            ->set('name', 'John')
+            ->where('id', 1);
+
+        $this->expectException(\Envms\FluentPDO\Exception::class);
+        $this->expectExceptionMessage('RETURNING clause is not supported by this database dialect');
+        $query->returning('id');
+    }
+
 }

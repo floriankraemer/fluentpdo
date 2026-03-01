@@ -34,6 +34,7 @@ class Update extends Common
             'WHERE'    => [$this, 'getClauseWhere'],
             'ORDER BY' => ', ',
             'LIMIT'    => null,
+            'RETURNING' => ', ',
         ];
         parent::__construct($fluent, $clauses);
 
@@ -137,6 +138,25 @@ class Update extends Common
         }
 
         return ' SET ' . implode(', ', $setArray);
+    }
+
+    /**
+     * Add RETURNING clause (PostgreSQL)
+     *
+     * @param string|array<string> $columns
+     *
+     * @return Update
+     */
+    public function returning(string|array $columns): self
+    {
+        if (!$this->dialect->supportsFeature('returning')) {
+            throw new Exception('RETURNING clause is not supported by this database dialect');
+        }
+
+        $columns = is_array($columns) ? $columns : [$columns];
+        $this->statements['RETURNING'] = $columns;
+
+        return $this;
     }
 
 }

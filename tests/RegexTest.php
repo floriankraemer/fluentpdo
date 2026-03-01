@@ -114,4 +114,17 @@ class RegexTest extends TestCase
         self::assertEquals(1, $join);
     }
 
+    public function testTableAliasWithSubqueryJoin()
+    {
+        $result = $this->regex->tableAlias("(SELECT id, name FROM users) u ON u.id = articles.user_id", $matches);
+        self::assertEquals(1, $result);
+        self::assertEquals("(SELECT id, name FROM users)", $matches[1]);
+        self::assertEquals("u", $matches[2]);
+
+        $result = $this->regex->tableAlias("(SELECT SUM(amount) as total FROM payments GROUP BY user_id) payments ON payments.user_id = users.id", $matches);
+        self::assertEquals(1, $result);
+        self::assertEquals("(SELECT SUM(amount) as total FROM payments GROUP BY user_id)", $matches[1]);
+        self::assertEquals("payments", $matches[2]);
+    }
+
 }

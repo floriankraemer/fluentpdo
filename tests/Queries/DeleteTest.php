@@ -6,6 +6,7 @@ require __DIR__ . '/../_resources/init.php';
 
 use PHPUnit\Framework\TestCase;
 use Envms\FluentPDO\Query;
+use Envms\FluentPDO\Structure;
 
 /**
  * Class DeleteTest
@@ -84,5 +85,21 @@ class DeleteTest extends TestCase
 
         self::assertEquals('DELETE user FROM user WHERE id = ?', $query->getQuery(false));
         self::assertEquals(['0' => '1'], $query->getParameters());
+    }
+
+    public function testDeleteFromAcceptsCompositePrimaryKeyArray()
+    {
+        // Create a custom structure with composite primary keys for 'user' table
+        $compositeStructure = new Structure();
+        $compositeStructure->setCompositePrimaryKey('user', ['id', 'country_id']);
+
+        // Create a fluent instance with the custom structure
+        $fluentWithComposite = new Query($this->fluent->getPdo(), $compositeStructure);
+
+        // Test that deleteFrom accepts array for composite primary key
+        $query = $fluentWithComposite->deleteFrom('user', ['id' => 1, 'country_id' => 1]);
+
+        self::assertEquals('DELETE FROM user WHERE id = ? AND country_id = ?', $query->getQuery(false));
+        self::assertEquals(['0' => '1', '1' => '1'], $query->getParameters());
     }
 }

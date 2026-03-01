@@ -80,6 +80,15 @@ $query = $fluent->from('comment')
     ->where('comment.id = ?', 1)
     ->whereOr('user.id = ?', 2);
 
+// BETWEEN (range conditions)
+$query = $fluent->from('article')
+    ->where('published', 1)
+    ->between('created_at', '2024-01-01', '2024-12-31');
+
+// BETWEEN with OR
+$query = $fluent->from('article')
+    ->betweenOr('created_at', '2024-01-01', '2024-12-31');
+
 // Reset WHERE clause
 $query = $fluent->from('user')->where(null)->where('active = ?', 1);
 ```
@@ -165,6 +174,16 @@ $query = $fluent->from('article')
 $query = $fluent->from('article')
     ->leftJoin('user ON user.id = article.user_id')
     ->select('user.name');
+
+// Subquery JOINs (e.g. for aggregations)
+$query = $fluent->from('contracts c')
+    ->select(null)
+    ->select('c.id_contract')
+    ->select('COALESCE(credit.total_credit, 0) AS total_credit')
+    ->select('COALESCE(debit.total_debit, 0) AS total_debit')
+    ->disableSmartJoin()
+    ->leftJoin('(SELECT id_contract, SUM(amount) AS total_credit FROM credit_operations GROUP BY id_contract) credit ON c.id_contract = credit.id_contract')
+    ->leftJoin('(SELECT id_contract, SUM(amount) AS total_debit FROM debit_operations GROUP BY id_contract) debit ON c.id_contract = debit.id_contract');
 
 // INNER JOIN
 $query = $fluent->from('article')
@@ -279,6 +298,50 @@ $fluent->insertInto('article', ['id' => 1, 'title' => 'Updated Title'])
     ->execute();
 ```
 
+### INSERT SELECT
+
+Copy data from one table to another using a SELECT query:
+
+```php
+$selectQuery = $fluent->from('source_table')
+    ->select('id, name, created_at', true)
+    ->where('status', 'active');
+
+$fluent->insertInto('target_table')
+    ->values($selectQuery, ['target_id', 'target_name', 'target_date'])
+    ->execute();
+
+// Generated SQL:
+// INSERT INTO target_table (target_id, target_name, target_date)
+// SELECT id, name, created_at FROM source_table WHERE source_table.status = ?
+```
+
+### REPLACE INTO (MySQL) / INSERT OR REPLACE (SQLite)
+
+Insert or replace rows when a unique key conflict occurs:
+
+```php
+// MySQL: REPLACE INTO
+// SQLite: INSERT OR REPLACE
+$fluent->replaceInto('article', [
+    'id'      => 1,
+    'title'   => 'Updated Title',
+    'content' => 'Content...'
+])->execute();
+```
+
+**Note:** `replaceInto()` is supported on MySQL and SQLite only. Other dialects throw an exception.
+
+### RETURNING clause (PostgreSQL)
+
+Add a RETURNING clause to INSERT (PostgreSQL only):
+
+```php
+$fluent->insertInto('user', ['name' => 'John', 'type' => 'author'])
+    ->returning(['id', 'name', 'created_at'])
+    ->execute();
+```
+
 ---
 
 ## DELETE
@@ -298,7 +361,18 @@ $fluent->deleteFrom('user', 1)->execute();
 ### Delete with composite primary key
 
 ```php
+// Using delete() or deleteFrom() with array for composite keys
 $fluent->delete('order_item', [
+    'order_id'   => 123,
+    'product_id' => 456
+])->execute();
+
+// Same with deleteFrom() — requires Structure with composite key configured
+$structure = new \Envms\FluentPDO\Structure();
+$structure->setCompositePrimaryKey('order_item', ['order_id', 'product_id']);
+$fluent = new \Envms\FluentPDO\Query($pdo, $structure);
+
+$fluent->deleteFrom('order_item', [
     'order_id'   => 123,
     'product_id' => 456
 ])->execute();
@@ -391,6 +465,19 @@ $fluent->update('user')
 
 ```php
 $fluent->update('user', ['name' => 'New Name'], 1)->execute();
+```
+
+### RETURNING clause (PostgreSQL)
+
+Return modified rows from UPDATE (PostgreSQL only). Pass `true` to `execute()` to receive the result set:
+
+```php
+$result = $fluent->update('user')
+    ->set('last_login', new Literal('NOW()'))
+    ->where('id', 1)
+    ->returning('id, last_login')
+    ->execute(true);
+$row = $result->fetch();
 ```
 
 ---

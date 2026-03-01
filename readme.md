@@ -34,6 +34,7 @@ This version works with PHP 5.4 to 7.1.
 
 - [Query Examples](docs/query-examples.md) — INSERT, DELETE, SELECT, and JOIN examples
 - [Upgrading to 3.0](docs/UPGRADE-3.0.md) — Migration guide from 2.x
+- [Fixes and Improvements](docs/FIXES-AND-IMPROVEMENTS.md) — Bug fixes and features from community issues
 
 ## Reference
 

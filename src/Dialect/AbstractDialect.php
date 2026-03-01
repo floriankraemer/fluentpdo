@@ -29,7 +29,12 @@ abstract class AbstractDialect implements DialectInterface
 
         // Try PDO::quote first, fallback to manual escaping
         try {
-            return $this->pdo->quote((string) $value);
+            $quoted = $this->pdo->quote((string) $value);
+            if ($quoted === false) {
+                // PDO::quote returns false for unsupported drivers (e.g., PDO_ODBC)
+                return "'" . $this->manualEscape((string) $value) . "'";
+            }
+            return $quoted;
         } catch (\PDOException $e) {
             // PDO::quote not supported (e.g., PDO_ODBC)
             return "'" . $this->manualEscape((string) $value) . "'";

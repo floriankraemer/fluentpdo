@@ -6,6 +6,7 @@ require __DIR__ . '/../_resources/init.php';
 
 use PHPUnit\Framework\TestCase;
 use Envms\FluentPDO\Query;
+use Envms\FluentPDO\Queries\Select;
 
 /**
  * Class InsertTest
@@ -94,5 +95,30 @@ class InsertTest extends TestCase
 
         self::assertEquals('INSERT IGNORE INTO article (user_id, title, content) VALUES (?, ?, ?)', $query->getQuery(false));
         self::assertEquals(['0' => '1', '1' => 'new title', '2' => 'new content'], $query->getParameters());
+    }
+
+    public function testInsertFromSelectBuildsInsertSelectQuery()
+    {
+        $selectQuery = $this->fluent->from('source_table')
+            ->select('id, name, created_at', true)
+            ->where('status', 'active');
+
+        $insertQuery = $this->fluent->insertInto('target_table')
+            ->values($selectQuery, ['target_id', 'target_name', 'target_date']);
+
+        $expectedSql = 'INSERT INTO target_table (target_id, target_name, target_date) SELECT id, name, created_at FROM source_table WHERE status = ?';
+
+        self::assertEquals($expectedSql, $insertQuery->getQuery(false));
+        self::assertEquals(['0' => 'active'], $insertQuery->getParameters());
+    }
+
+    public function testInsertReturningUnsupported()
+    {
+        // Test that RETURNING throws exception for unsupported dialects
+        $query = $this->fluent->insertInto('user', ['name' => 'John']);
+
+        $this->expectException(\Envms\FluentPDO\Exception::class);
+        $this->expectExceptionMessage('RETURNING clause is not supported by this database dialect');
+        $query->returning('id');
     }
 }

@@ -196,6 +196,35 @@ abstract class Common extends Base
     }
 
     /**
+     * Add BETWEEN condition, defaults to appending with AND
+     *
+     * @param string $column
+     * @param mixed $min
+     * @param mixed $max
+     * @param string $separator - should be AND or OR
+     *
+     * @return $this
+     */
+    public function between(string $column, mixed $min, mixed $max, string $separator = 'AND')
+    {
+        return $this->addWhereStatement("$column BETWEEN ? AND ?", $separator, [$min, $max]);
+    }
+
+    /**
+     * Add BETWEEN condition appending with OR
+     *
+     * @param string $column
+     * @param mixed $min
+     * @param mixed $max
+     *
+     * @return $this
+     */
+    public function betweenOr(string $column, mixed $min, mixed $max)
+    {
+        return $this->between($column, $min, $max, 'OR');
+    }
+
+    /**
      * @return string
      */
     protected function getClauseJoin()
@@ -236,11 +265,12 @@ abstract class Common extends Base
             return $this->resetClause('JOIN');
         }
 
-        if (in_array(substr($statement, 0, -1), $this->joins)) {
+        [$joinAlias, $joinTable] = $this->setJoinNameAlias($statement);
+
+        // For raw joins with aliases, check the alias instead of statement substring
+        if ($joinAlias !== '' && in_array($joinAlias, $this->joins)) {
             return $this;
         }
-
-        [$joinAlias, $joinTable] = $this->setJoinNameAlias($statement);
 
         $statementUpper = strtoupper($statement);
         if (str_contains($statementUpper, ' ON ') || str_contains($statementUpper, ' USING')) {

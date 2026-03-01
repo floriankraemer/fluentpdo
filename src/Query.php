@@ -6,7 +6,7 @@ namespace Envms\FluentPDO;
 
 use PDO;
 use Envms\FluentPDO\Dialect\{DialectInterface, DialectFactory};
-use Envms\FluentPDO\Queries\{Insert, Select, Update, Delete};
+use Envms\FluentPDO\Queries\{Insert, Select, Update, Delete, Replace};
 
 /**
  * FluentPDO is a quick and light PHP library for rapid query building. It features a smart join builder, which automatically creates table joins.
@@ -123,6 +123,27 @@ class Query
     }
 
     /**
+     * Create REPLACE INTO query (MySQL) / INSERT OR REPLACE (SQLite)
+     *
+     * @param ?string $table
+     * @param array   $values - accepts one or multiple rows, @see docs
+     *
+     * @return Replace
+     *
+     * @throws Exception
+     */
+    /**
+     * @param array<int|string, mixed> $values
+     */
+    public function replaceInto(?string $table = null, array $values = []): Replace
+    {
+        $this->setTableName($table);
+        $table = $this->getFullTableName();
+
+        return new Replace($this, $table, $values);
+    }
+
+    /**
      * Create UPDATE query
      *
      * @param ?string      $table
@@ -178,11 +199,11 @@ class Query
      * Create DELETE FROM query
      *
      * @param ?string $table
-     * @param ?int    $primaryKey
+     * @param int|array<int|string, mixed>|null $primaryKey delete only row by primary key (supports composite keys)
      *
      * @return Delete
      */
-    public function deleteFrom(?string $table = null, ?int $primaryKey = null): Delete
+    public function deleteFrom(?string $table = null, int|array|null $primaryKey = null): Delete
     {
         $args = func_get_args();
 

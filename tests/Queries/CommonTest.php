@@ -312,4 +312,40 @@ class CommonTest extends TestCase
         self::assertEquals($expectedUser, $user);
     }
 
+    public function testMultipleSubqueryJoins()
+    {
+        $query = $this->fluent->from('contracts c')
+            ->select(null) // Override default c.*
+            ->select('c.id_contract')
+            ->select('COALESCE(credit.total_credit, 0) AS total_credit')
+            ->select('COALESCE(debit.total_debit, 0) AS total_debit')
+            ->disableSmartJoin()
+            ->leftJoin('(SELECT id_contract, SUM(amount) AS total_credit FROM credit_operations GROUP BY id_contract) credit ON c.id_contract = credit.id_contract')
+            ->leftJoin('(SELECT id_contract, SUM(amount) AS total_debit FROM debit_operations GROUP BY id_contract) debit ON c.id_contract = debit.id_contract');
+
+        $expectedQuery = 'SELECT c.id_contract, COALESCE(credit.total_credit, 0) AS total_credit, COALESCE(debit.total_debit, 0) AS total_debit FROM contracts c LEFT JOIN (SELECT id_contract, SUM(amount) AS total_credit FROM credit_operations GROUP BY id_contract) credit ON c.id_contract = credit.id_contract  LEFT JOIN (SELECT id_contract, SUM(amount) AS total_debit FROM debit_operations GROUP BY id_contract) debit ON c.id_contract = debit.id_contract';
+
+        self::assertEquals($expectedQuery, $query->getQuery(false));
+    }
+
+    public function testBetween()
+    {
+        $query = $this->fluent->from('user')
+            ->where('id', 1)
+            ->between('created_at', '2020-01-01', '2020-12-31');
+
+        self::assertEquals('SELECT user.* FROM user WHERE id = ? AND created_at BETWEEN ? AND ?', $query->getQuery(false));
+        self::assertEquals(['0' => '1', '1' => '2020-01-01', '2' => '2020-12-31'], $query->getParameters());
+    }
+
+    public function testBetweenOr()
+    {
+        $query = $this->fluent->from('user')
+            ->where('id', 1)
+            ->betweenOr('created_at', '2020-01-01', '2020-12-31');
+
+        self::assertEquals('SELECT user.* FROM user WHERE id = ? OR created_at BETWEEN ? AND ?', $query->getQuery(false));
+        self::assertEquals(['0' => '1', '1' => '2020-01-01', '2' => '2020-12-31'], $query->getParameters());
+    }
+
 }
