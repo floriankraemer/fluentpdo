@@ -29,4 +29,7 @@ Adds `$query->between('column', $min, $max)` and `$query->betweenOr('column', $m
 `$query->returning('col1')` or `->returning(['col1','col2'])` appends `RETURNING col1, col2` to UPDATE/INSERT queries (PostgreSQL only). Throws exception for unsupported dialects.
 
 ### replaceInto() method ([#219](https://github.com/envms/fluentpdo/issues/219))
-`$fluent->replaceInto('table', $values)` produces `REPLACE INTO` (MySQL) or `INSERT OR REPLACE` (SQLite). Throws exception for unsupported dialects.
+`replaceInto()` produces `REPLACE INTO` (MySQL) or `INSERT OR REPLACE` (SQLite). Throws exception for unsupported dialects.
+
+### transaction() method
+Adds `$fluent->transaction(callable $callback)` for executing multiple operations atomically. Automatically handles begin/commit/rollback and joins existing transactions when nested.

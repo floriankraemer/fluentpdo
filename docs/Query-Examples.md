@@ -11,6 +11,65 @@ $fluent = new \Envms\FluentPDO\Query($pdo);
 
 ---
 
+## Transactions
+
+FluentPDO provides a `transaction()` method to execute multiple database operations atomically within a single database transaction.
+
+### Basic transaction
+
+```php
+$result = $fluent->transaction(function (\Envms\FluentPDO\Query $db) {
+    $db->insertInto('user', ['name' => 'John'])->execute();
+    $db->insertInto('user', ['name' => 'Jane'])->execute();
+    return 'Users created successfully';
+});
+```
+
+### Transaction with rollback on error
+
+```php
+try {
+    $fluent->transaction(function (\Envms\FluentPDO\Query $db) {
+        $db->insertInto('user', ['name' => 'Alice'])->execute();
+        $db->insertInto('user', ['name' => 'Bob'])->execute();
+
+        // If this throws, both inserts are rolled back
+        throw new Exception('Something went wrong');
+    });
+} catch (Exception $e) {
+    // Handle error - no data was inserted
+    echo 'Transaction failed: ' . $e->getMessage();
+}
+```
+
+### Single operation in transaction
+
+```php
+// Even single operations benefit from explicit transaction control
+$insertId = $fluent->transaction(function (\Envms\FluentPDO\Query $db) {
+    return $db->insertInto('user', ['name' => 'Charlie'])->execute();
+});
+```
+
+### Nested transactions
+
+When already inside a transaction, `transaction()` joins the existing transaction scope without starting a new one:
+
+```php
+$pdo->beginTransaction(); // Manual transaction
+
+$fluent->transaction(function (\Envms\FluentPDO\Query $db) {
+    // This runs within the outer transaction
+    $db->insertInto('user', ['name' => 'Nested'])->execute();
+});
+
+$pdo->commit(); // Commits everything
+```
+
+**Note:** Transactions automatically handle commit/rollback based on success or failure. Exceptions thrown from the callback are re-thrown after rollback.
+
+---
+
 ## SELECT
 
 ### Basic select
@@ -402,6 +461,7 @@ $fluent->deleteFrom('log')
 ### DELETE IGNORE
 
 ```php
+// ignore() suppresses errors (e.g. foreign key violations) — delete continues even if some rows fail
 $fluent->deleteFrom('user')
     ->ignore()
     ->where('id', 1)

@@ -211,6 +211,39 @@ class Query
     }
 
     /**
+     * Execute operations within a database transaction
+     *
+     * @param callable $callback Callback receiving this Query instance for fluent operations
+     * @return mixed The return value of the callback
+     *
+     * @throws \Throwable Re-throws any exception from the callback after rollback
+     */
+    public function transaction(callable $callback): mixed
+    {
+        $pdo = $this->getPdo();
+        $wasInTransaction = $pdo->inTransaction();
+
+        if (!$wasInTransaction) {
+            $pdo->beginTransaction();
+        }
+
+        try {
+            $result = $callback($this);
+
+            if (!$wasInTransaction) {
+                $pdo->commit();
+            }
+
+            return $result;
+        } catch (\Throwable $e) {
+            if (!$wasInTransaction) {
+                $pdo->rollBack();
+            }
+            throw $e;
+        }
+    }
+
+    /**
      * @return PDO
      * @throws Exception if connection was closed
      */
